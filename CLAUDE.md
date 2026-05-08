@@ -80,9 +80,11 @@ Phase A — Foundation
    running.*
 
 Phase B — Backend core (Python-first)
-2. ⏳ **Models + matching + validators** — `ScrapeResult`/`Method`/`Status`
-   enums in `models.py`; `matching.py` (`pick_best_candidate`, `score`);
-   `validators.py` (`is_valid_result`); pytest coverage for both.
+2. ✅ **Models + matching + validators** — `ScrapeResult`/`Method`/`Status`
+   enums in `models.py`; `matching.py` (`pick_best_candidate`, `score`,
+   `DEFAULT_THRESHOLD = 55`); `validators.py` (`is_valid_result` — gates on
+   status, title length, positive price, bot-check phrases, similarity).
+   **20 pytest tests pass**, no network calls.
 3. ⏳ **Tier 1 (Basic) for Amazon only** — `tiers/basic.py` + `sites/amazon.py`
    + small CLI shim `python -m app.cli "<query>"`.
 4. ⏳ **Tier 2 (Browser) for Amazon** — `tiers/browser.py` w/ Playwright +
