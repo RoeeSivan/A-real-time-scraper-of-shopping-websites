@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.python-version
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Playwright
+.playwright-cache/
+playwright-report/
+test-results/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
