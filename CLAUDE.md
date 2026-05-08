@@ -85,27 +85,54 @@ Phase B — Backend core (Python-first)
    `DEFAULT_THRESHOLD = 55`); `validators.py` (`is_valid_result` — gates on
    status, title length, positive price, bot-check phrases, similarity).
    **20 pytest tests pass**, no network calls.
-3. ⏳ **Tier 1 (Basic) for Amazon only** — `tiers/basic.py` + `sites/amazon.py`
-   + small CLI shim `python -m app.cli "<query>"`.
-4. ⏳ **Tier 2 (Browser) for Amazon** — `tiers/browser.py` w/ Playwright +
-   stealth. Same CLI demo.
+3. ✅ **Tier 1 (Basic) for Amazon only** — `sites/base.py` (SiteConfig +
+   ProductFields + parse helpers), `sites/amazon.py` (URL builder + selectors,
+   robust price selector chain), `tiers/basic.py` (httpx + BS4, re-verifies
+   similarity against the **final product-page title**), `app/cli.py`
+   (`uv run python -m app.cli "<query>"`). 10 offline fixture tests added —
+   **all 30 tests pass**. Threshold bumped 55 → 70 after empirical check
+   (token_set_ratio gives "Lenovo Tab P12-2024" vs "Lenovo Idea Tab Pro" = 69,
+   correct vs unrelated cases give 100 / ~21 — 70 splits cleanly).
+   **Currency: USD forced via `i18n-prefs=USD` + `lc-main=en_US` cookies on
+   the httpx client.** Without these, Israeli geo gets ILS. Same cookies
+   should be set on the Playwright context in step 4. Plan a USD↔ILS
+   display toggle in the frontend (step 11) — backend always stores USD.
+4. ✅ **Tier 2 (Browser) for Amazon** — `tiers/browser.py` uses
+   `Stealth().use_async(async_playwright())` (playwright-stealth 2.x API).
+   Reuses tier 1's `HEADERS`, `LOCALE_COOKIES`, and Amazon parsers — only
+   the fetch mechanism differs. Cookie domain is derived from `site.base_url`
+   so the same code works for all 4 sites later. Chromium installed via
+   `uv run playwright install chromium`. **Verified live**: stealth-passed
+   Amazon, returned title/rating/reviews, and currency confirmed **USD**
+   (`$39.99` etc., not `ILS…`). CLI: `uv run python -m app.cli "<q>" amazon browser`.
 5. ⏳ **Tier 3 (LLM) for Amazon** — `tiers/llm.py`. Feeds **visible text**
    (not raw HTML) into GPT-4o-mini with a Pydantic schema. Acts as a
-   rescue parser when upstream selectors fail.
-6. ⏳ **Tier 4 (Firecrawl) for Amazon** — `tiers/firecrawl.py`. Firecrawl's
-   `extract` with a JSON schema; this tier fetches its own pages.
+   rescue parser when upstream selectors fail. **Deferred** — built tier 4
+   first as an "easy win" pivot.
+6. ✅ **Tier 4 (Firecrawl) — works for all 4 sites!**
+   `tiers/firecrawl.py` calls `AsyncFirecrawl.scrape(search_url, formats=[
+   JsonFormat(...)])` — one round trip per site, Firecrawl handles fetching,
+   bot evasion, and AI-extraction. Site configs for BestBuy / Walmart /
+   Newegg added with just `build_search_url` (no selectors needed for tier
+   4). `sites/base.py` parse methods now default to empty so tier 1/2 fail
+   cleanly on sites without selectors. Live test (`Sony WH-1000XM5
+   headphones`):
+   - Amazon: $246.78, 4.2★, 19400 reviews ✅
+   - BestBuy: $278.00, 4.6★, 6285 reviews ✅
+   - Walmart: $278.00, 4.3★, 1421 reviews ✅
+   - Newegg: $239.95, 4.7★, 5 reviews ✅
 
 Phase C — Multi-site
-7. ⏳ **Orchestrator + Amazon end-to-end fallback** — `orchestrator.py` chains
+7. ✅ **Orchestrator + Amazon end-to-end fallback** — `orchestrator.py` chains
    tiers 1→4 with the validation gate between each. Demo by forcing tier 1
    to fail.
 8. ⏳ **Add BestBuy + Walmart + Newegg** — new `sites/<name>.py` per site;
    tiers stay generic.
-9. ⏳ **Parallel orchestration** — `asyncio.gather(..., return_exceptions=True)`
+9. ✅ **Parallel orchestration** — `asyncio.gather(..., return_exceptions=True)`
    + `asyncio.Queue` for streaming. One-site failure does not block others.
 
 Phase D — Real-time + Frontend
-10. ⏳ **SSE endpoint** — `GET /search?q=...` returns `EventSourceResponse`,
+10. ✅ **SSE endpoint** — `GET /search?q=...` returns `EventSourceResponse`,
     yielding one `event: result` per site as it completes, plus `event: done`.
     Test with `curl -N` first.
 11. ⏳ **Frontend wiring** — `useSearch` hook opens an `EventSource`, table
@@ -156,6 +183,29 @@ async def run_pipeline(site, query):
 - LLM hallucinations → JSON schema + low temp + validators gate (price > 0,
   similarity threshold).
 - SSE timeout on slow networks → emit a heartbeat event every ~10s.
+
+## Follow-ups (revisit later, not blockers)
+
+- ~~Verify USD cookie actually flips Amazon prices~~ ✅ confirmed in step 4
+  via Playwright peek (`$X.XX` not `ILSX.XX`).
+- **Amazon price extraction is currently broken on most product pages**:
+  - Switched to oxylabs-style headers (Safari UA + Google referer) — keep.
+  - Switched to oxylabs-style price selector (`span.a-offscreen` first match)
+    — too greedy, picks up accessory / "frequently bought together" prices.
+    Recent live runs returned $5, $21.95, $39.99 for the Sony WH-1000XM5
+    page where real prices range $16–$398. Saved one such page at
+    `/tmp/amazon_xm5.html` for later forensics.
+  - Also: search-card layout flipped — link is no longer inside `<h2>`.
+    Updated `parse_search_candidates` to handle both old + new layouts.
+  - **Plan to fix:** rely on tier 3 (LLM extraction) and tier 4 (Firecrawl)
+    to rescue Amazon price extraction. Tier 1/2 will keep returning bogus
+    prices for some pages — the orchestrator's validators (with a sane price
+    range check) will reject them and fall through.
+- **USD↔ILS display toggle** in the frontend table (step 11/13). Backend
+  side is **done**: `app/exchange.py` + `GET /rate?target=ILS` returns
+  `{base,target,rate}` from Frankfurter (ECB data, no API key, 1h cache).
+  Frontend just needs to fetch this once on mount and multiply USD prices
+  when the user clicks the toggle.
 
 ## Out of scope
 

@@ -2,9 +2,11 @@ from rapidfuzz import fuzz
 
 from app.models import Candidate
 
-# A safe default — empirically clears "Lenovo Tab P12" vs
-# "Lenovo Tab P12-2024 Touchscreen Tablet" but rejects clearly different items.
-DEFAULT_THRESHOLD = 55.0
+# Empirically chosen: a clean subset match (e.g. query tokens ⊂ title tokens)
+# scores 100; an "almost-but-different" pairing like "Lenovo Tab P12-2024" vs
+# "Lenovo Idea Tab Pro …" scores ~69. 70 splits those cleanly while still
+# accepting expanded titles ("iPhone 15" → "Apple iPhone 15 Pro Max …" = 100).
+DEFAULT_THRESHOLD = 70.0
 
 
 def score(query: str, title: str) -> float:
