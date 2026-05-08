@@ -19,6 +19,7 @@ from app.sites.walmart import walmart
 from app.tiers.basic import basic_scrape
 from app.tiers.browser import browser_scrape
 from app.tiers.firecrawl import firecrawl_scrape
+from app.tiers.llm import llm_scrape
 
 # Set up logging to see debug messages
 logging.basicConfig(
@@ -36,8 +37,8 @@ SITES: dict[str, SiteConfig] = {
 TIERS = {
     "basic": basic_scrape,
     "browser": browser_scrape,
+    "llm": llm_scrape,
     "firecrawl": firecrawl_scrape,
-    # tier 3 (llm) plugs in here next.
 }
 
 

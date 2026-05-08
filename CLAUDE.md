@@ -108,19 +108,31 @@ Phase B — Backend core (Python-first)
 5. ⏳ **Tier 3 (LLM) for Amazon** — `tiers/llm.py`. Feeds **visible text**
    (not raw HTML) into GPT-4o-mini with a Pydantic schema. Acts as a
    rescue parser when upstream selectors fail. **Deferred** — built tier 4
-   first as an "easy win" pivot.
-6. ✅ **Tier 4 (Firecrawl) — works for all 4 sites!**
-   `tiers/firecrawl.py` calls `AsyncFirecrawl.scrape(search_url, formats=[
-   JsonFormat(...)])` — one round trip per site, Firecrawl handles fetching,
-   bot evasion, and AI-extraction. Site configs for BestBuy / Walmart /
-   Newegg added with just `build_search_url` (no selectors needed for tier
-   4). `sites/base.py` parse methods now default to empty so tier 1/2 fail
-   cleanly on sites without selectors. Live test (`Sony WH-1000XM5
-   headphones`):
+   first as an "easy win" pivot. **OpenAI API reachability verified
+   2026-05-09** via 5-token ping (`gpt-4o-mini-2024-07-18` returned `ok`,
+   13 tokens billed) — key in `.env` works, so this step is unblocked.
+6. ✅ **Tier 4 (Firecrawl) — works for all 4 sites** (regressed → restored
+   2026-05-09). `tiers/firecrawl.py` calls
+   `AsyncFirecrawl.scrape(search_url, formats=[JsonFormat(type="json",
+   prompt=..., schema=ProductExtraction)])` — one round trip per site,
+   Firecrawl does fetching + bot evasion + **AI extraction** server-side and
+   returns a structured dict at `doc.json`. Schema is a Pydantic model with
+   `title / price (USD float) / rating / review_count / product_url` and
+   field-level descriptions that double as extraction hints. We coerce
+   numbers from strings (e.g. `"$278.00"` → `278.0`) before building the
+   `ScrapeResult`. Site configs for BestBuy / Walmart / Newegg added with
+   just `build_search_url` (no selectors needed for tier 4).
+   `sites/base.py` parse methods default to empty so tier 1/2 fail cleanly
+   on sites without selectors. Live test (`Sony WH-1000XM5 headphones`):
    - Amazon: $246.78, 4.2★, 19400 reviews ✅
    - BestBuy: $278.00, 4.6★, 6285 reviews ✅
    - Walmart: $278.00, 4.3★, 1421 reviews ✅
    - Newegg: $239.95, 4.7★, 5 reviews ✅
+
+   **API import path** (firecrawl-py 4.25.x): `JsonFormat` is no longer at
+   the package root — it lives at `firecrawl.v2.types.JsonFormat`. The
+   response field is `doc.json` (a dict matching the schema). Importing
+   `from firecrawl import JsonFormat` will fail.
 
 Phase C — Multi-site
 7. ✅ **Orchestrator + Amazon end-to-end fallback** — `orchestrator.py` chains
@@ -135,8 +147,12 @@ Phase D — Real-time + Frontend
 10. ✅ **SSE endpoint** — `GET /search?q=...` returns `EventSourceResponse`,
     yielding one `event: result` per site as it completes, plus `event: done`.
     Test with `curl -N` first.
-11. ⏳ **Frontend wiring** — `useSearch` hook opens an `EventSource`, table
-    renders incrementally with skeletons + `StatusBadge`.
+11. ✅ **Frontend wiring** — `useSearch` hook (`hooks/useSearch.ts`) opens an
+    `EventSource` via `lib/sse.ts`, dedupes by `site`, cleans up on unmount.
+    `app/page.tsx` renders `SearchBar` + `ResultsTable`; rows show skeletons
+    until that site's `event: result` arrives, then flip to `ResultRow`
+    with `StatusBadge`. *Pending in this step:* USD↔ILS display toggle (see
+    follow-up below — backend already exposes `GET /rate?target=ILS`).
 
 Phase E — Polish
 12. ⏳ **Extra feature: PriceChart** — `recharts` bar chart of prices,
@@ -184,8 +200,38 @@ async def run_pipeline(site, query):
   similarity threshold).
 - SSE timeout on slow networks → emit a heartbeat event every ~10s.
 
+## What's left (open work, in priority order)
+
+1. **Step 5 — Tier 3 (LLM rescue)** — write `tiers/llm.py`. OpenAI access
+   is already verified (see step 5). Plan: pull visible text from the
+   product page (not raw HTML), pass to `gpt-4o-mini` with a Pydantic
+   schema mirroring `ProductExtraction`, return a `ScrapeResult`. Slot it
+   into the orchestrator between `browser` and `firecrawl`.
+2. **Step 8 — Per-site selectors for BestBuy / Walmart / Newegg.** Today
+   they ride tier 4 only (`has_selectors=False`). Add `parse_search_candidates`
+   + `parse_product` so tiers 1+2 can run for cheaper/faster results.
+3. **Step 12 — `PriceChart` (extra feature).** `recharts` bar chart of
+   per-site prices, cheapest highlighted, updates as SSE events arrive.
+4. **Step 13 — Polish + demo video.** README polish, error/loading states,
+   smoke test on 3 queries, then record the submission demo.
+5. **USD↔ILS frontend toggle.** Backend done (`GET /rate?target=ILS`).
+   Frontend needs to fetch once on mount and multiply USD prices when
+   user clicks.
+6. **Amazon tier 1/2 price extraction is still flaky** — see follow-up
+   below. Not blocking since tier 4 (firecrawl) rescues it, but worth
+   fixing for assignment grading on the fallback story.
+
 ## Follow-ups (revisit later, not blockers)
 
+- **Don't regress firecrawl back to markdown-only parsing.** On 2026-05-08
+  the tier was rewritten to `formats=["markdown"]` + regex link scraping,
+  which (a) hardcoded `price=None`, making every result fail validation
+  (validators.py requires `price > 0`), and (b) extracted titles from the
+  first `[text](url)` link, which on Amazon is an `<img>` alt — leaving
+  titles like `"![Sony WH-1000XM5..."` and `product_url` pointing at an
+  image CDN. Fix (2026-05-09) restored the JSON-schema extraction path.
+  If you ever need to debug firecrawl extractions, ADD a markdown fallback,
+  don't REPLACE the JSON path.
 - ~~Verify USD cookie actually flips Amazon prices~~ ✅ confirmed in step 4
   via Playwright peek (`$X.XX` not `ILSX.XX`).
 - **Amazon price extraction is currently broken on most product pages**:

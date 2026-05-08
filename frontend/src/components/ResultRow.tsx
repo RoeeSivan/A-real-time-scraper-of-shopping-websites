@@ -21,7 +21,7 @@ export function ResultRow({ result, isLoading = false }: ResultRowProps) {
   return (
     <tr className="border-b border-slate-200 hover:bg-slate-50">
       <td className="px-4 py-3 text-sm font-medium text-slate-900">
-        {result?.site ? result.site.charAt(0).toUpperCase() + result.site.slice(1) + ".com" : <span className="text-slate-400">—</span>}
+        {result?.site ?? <span className="text-slate-400">—</span>}
       </td>
       <td className="px-4 py-3 text-sm text-slate-700 max-w-xs truncate">
         {result?.title || (isLoading ? <span className="text-slate-400">Loading...</span> : "—")}
@@ -43,6 +43,20 @@ export function ResultRow({ result, isLoading = false }: ResultRowProps) {
       </td>
       <td className="px-4 py-3 text-sm text-slate-600">
         {result?.method ?? "—"}
+      </td>
+      <td className="px-4 py-3 text-sm">
+        {result?.product_url ? (
+          <a
+            href={result.product_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            View →
+          </a>
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
       </td>
     </tr>
   );

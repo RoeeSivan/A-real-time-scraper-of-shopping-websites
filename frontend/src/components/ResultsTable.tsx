@@ -3,7 +3,8 @@
 import { ScrapeResult } from "@/lib/types";
 import { ResultRow } from "./ResultRow";
 
-const SITES = ["amazon", "bestbuy", "walmart", "newegg"];
+// Must match the `name` field on each SiteConfig in backend/app/sites/*.py.
+const SITES = ["Amazon.com", "BestBuy.com", "Walmart.com", "Newegg.com"];
 
 interface ResultsTableProps {
   results: ScrapeResult[];
@@ -46,6 +47,9 @@ export function ResultsTable({
             </th>
             <th className="px-4 py-3 text-left font-semibold text-slate-900">
               Method
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-slate-900">
+              Link
             </th>
           </tr>
         </thead>

@@ -1,15 +1,18 @@
 """Tier 4: Firecrawl. External scraping API — handles fetching, bot evasion,
 and structured extraction in a single call. The "give up on our own infra" tier.
 
-We hand Firecrawl the **search** URL and ask it to find the listing matching
-the query, then extract title/price/rating/reviews. One round trip, no
-selector or stealth-cookie work on our side.
+We hand Firecrawl the **search** URL plus a Pydantic schema and let it do AI
+extraction server-side. One round trip per site, no selector or stealth-cookie
+work on our side. Returns title / price / rating / review_count / product_url
+already structured.
 """
 
-import json
 import logging
+from typing import Any
 
 from firecrawl import AsyncFirecrawl
+from firecrawl.v2.types import JsonFormat
+from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.matching import score
@@ -18,6 +21,74 @@ from app.sites.base import SiteConfig
 
 log = logging.getLogger(__name__)
 
+
+class ProductExtraction(BaseModel):
+    """Schema Firecrawl's AI extractor fills in from the search-results page."""
+
+    title: str | None = Field(
+        default=None,
+        description="Full product title as shown on the listing.",
+    )
+    price: float | None = Field(
+        default=None,
+        description="Current price in USD as a plain number (e.g. 278.00). "
+        "Do not include currency symbols. If the price is shown in another "
+        "currency, leave null.",
+    )
+    rating: float | None = Field(
+        default=None,
+        description="Average star rating between 0 and 5 (e.g. 4.6). "
+        "Null if not displayed.",
+    )
+    review_count: int | None = Field(
+        default=None,
+        description="Total number of reviews/ratings. Null if not displayed.",
+    )
+    product_url: str | None = Field(
+        default=None,
+        description="Absolute URL to the product detail page (not an image, "
+        "not the search page itself).",
+    )
+
+
+def _build_prompt(query: str) -> str:
+    return (
+        f"You are looking at a product search results page. Find the listing "
+        f"that best matches the query: \"{query}\". Extract its fields per the "
+        f"schema. The product_url MUST be a direct link to that product's "
+        f"detail page (not an image CDN URL, not the search page). Use null "
+        f"for any field that is not visibly shown on the page — do not invent "
+        f"values."
+    )
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Strip currency / whitespace; first match of an int/decimal wins.
+        import re
+        cleaned = value.replace(",", "")
+        match = re.search(r"\d+(?:\.\d+)?", cleaned)
+        return float(match.group()) if match else None
+    return None
+
+
+def _coerce_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        import re
+        cleaned = value.replace(",", "")
+        match = re.search(r"\d+", cleaned)
+        return int(match.group()) if match else None
+    return None
 
 
 async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
@@ -29,96 +100,74 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
         )
 
     fc = AsyncFirecrawl(api_key=settings.firecrawl_api_key)
-    
+    search_url = site.build_search_url(query)
+    log.debug("firecrawl: %s search_url=%s", site.name, search_url)
+
     try:
-        search_url = site.build_search_url(query)
-        log.debug(f"Scraping {site.name} URL: {search_url}")
-        
-        # Use markdown format - most reliable
         doc = await fc.scrape(
             search_url,
-            formats=["markdown"],
-            location={"country": "US", "languages": ["en-US"]},
-            only_main_content=True,
-        )
-        
-        markdown_content = getattr(doc, 'markdown', None)
-        log.debug(f"Markdown content length: {len(markdown_content) if markdown_content else 0}")
-        
-        if not markdown_content:
-            log.warning(f"No markdown content from Firecrawl for {site.name}")
-            return ScrapeResult(
-                site=site.name,
-                status=ScrapeStatus.FAILED,
-                error="firecrawl: no markdown content",
-            )
-        
-        # Simple heuristic parsing: look for links and extract text
-        import re
-        
-        # Look for markdown links: [text](url)
-        link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
-        matches = re.findall(link_pattern, markdown_content)
-        
-        log.debug(f"Found {len(matches)} links in markdown")
-        
-        if matches:
-            # Find the best match - typically the first substantial product link
-            # Filter out nav/header links (usually short)
-            candidates = [
-                (title, url) for title, url in matches 
-                if len(title) > 10 and len(title) < 200
-            ]
-            
-            if candidates:
-                title, url = candidates[0]  # Take the first good candidate
-                
-                # Validate
-                if title and len(title) > 5:
-                    log.debug(f"Extracted from markdown: {title}")
-                    return ScrapeResult(
-                        site=site.name,
-                        status=ScrapeStatus.SUCCESS,
-                        method=Method.FIRECRAWL,
-                        title=title,
-                        price=None,  # Markdown doesn't preserve price easily
-                        rating=None,
-                        review_count=None,
-                        product_url=url if url.startswith('http') else search_url,
-                        similarity=score(query, title),
-                    )
-        
-        # Fallback: try to extract the first heading as product name
-        heading_pattern = r'^#+\s+(.+)$'
-        heading_matches = re.findall(heading_pattern, markdown_content, re.MULTILINE)
-        
-        if heading_matches:
-            title = heading_matches[0].strip()
-            if title and len(title) > 5:
-                log.debug(f"Extracted heading as title: {title}")
-                return ScrapeResult(
-                    site=site.name,
-                    status=ScrapeStatus.SUCCESS,
-                    method=Method.FIRECRAWL,
-                    title=title,
-                    price=None,
-                    rating=None,
-                    review_count=None,
-                    product_url=search_url,
-                    similarity=score(query, title),
+            formats=[
+                JsonFormat(
+                    type="json",
+                    prompt=_build_prompt(query),
+                    schema=ProductExtraction,
                 )
-        
-        log.warning(f"Firecrawl for {site.name}: could not extract product title from markdown")
-        return ScrapeResult(
-            site=site.name,
-            status=ScrapeStatus.FAILED,
-            error="firecrawl: could not extract title from markdown",
+            ],
+            only_main_content=True,
+            location={"country": "US", "languages": ["en-US"]},
         )
-        
     except Exception as exc:
-        log.error(f"Firecrawl scrape error for {site.name}: {type(exc).__name__}: {exc}")
+        log.error("firecrawl scrape error for %s: %s: %s", site.name, type(exc).__name__, exc)
         return ScrapeResult(
             site=site.name,
             status=ScrapeStatus.FAILED,
-            error=f"firecrawl: {type(exc).__name__}: {str(exc)[:100]}",
+            error=f"firecrawl: {type(exc).__name__}: {str(exc)[:200]}",
         )
+
+    extracted = getattr(doc, "json", None)
+    if not extracted:
+        log.warning("firecrawl: %s returned no JSON extraction", site.name)
+        return ScrapeResult(
+            site=site.name,
+            status=ScrapeStatus.FAILED,
+            error="firecrawl: empty extraction",
+        )
+
+    # Firecrawl may return either a dict or a model instance depending on SDK
+    # version — normalise to a plain dict.
+    if hasattr(extracted, "model_dump"):
+        data = extracted.model_dump()
+    elif isinstance(extracted, dict):
+        data = extracted
+    else:
+        data = dict(extracted)  # last-ditch coercion
+
+    title = data.get("title")
+    price = _coerce_float(data.get("price"))
+    rating = _coerce_float(data.get("rating"))
+    review_count = _coerce_int(data.get("review_count"))
+    product_url = data.get("product_url") or search_url
+
+    if not title:
+        return ScrapeResult(
+            site=site.name,
+            status=ScrapeStatus.FAILED,
+            error="firecrawl: extraction missing title",
+        )
+
+    log.info(
+        "firecrawl %s: title=%r price=%s rating=%s reviews=%s",
+        site.name, title, price, rating, review_count,
+    )
+
+    return ScrapeResult(
+        site=site.name,
+        status=ScrapeStatus.SUCCESS,
+        method=Method.FIRECRAWL,
+        title=title,
+        price=price,
+        rating=rating,
+        review_count=review_count,
+        product_url=product_url,
+        similarity=score(query, title),
+    )

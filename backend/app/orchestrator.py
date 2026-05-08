@@ -1,9 +1,12 @@
 """Per-site fallback pipeline + parallel multi-site runner.
 
 `run_pipeline(site, query)` walks the available tiers in order:
-    basic (httpx) → browser (Playwright) → firecrawl
-and stops at the first one whose result clears the validators. Tier 3 (LLM)
-is intentionally skipped for now — see CLAUDE.md follow-ups.
+    basic (httpx) → browser (Playwright) → llm (gpt-4o-mini) → firecrawl
+and stops at the first one whose result clears the validators.
+
+Sites with `has_selectors=False` skip basic+browser and start at the
+LLM tier (which only needs the search page's visible text, no per-site
+selectors).
 """
 
 import asyncio
@@ -19,6 +22,7 @@ from app.sites.walmart import walmart
 from app.tiers.basic import basic_scrape
 from app.tiers.browser import browser_scrape
 from app.tiers.firecrawl import firecrawl_scrape
+from app.tiers.llm import llm_scrape
 from app.validators import is_valid_result
 
 log = logging.getLogger(__name__)
@@ -31,12 +35,17 @@ SELECTOR_TIERS: list[tuple[str, TierFn]] = [
     ("browser", browser_scrape),
 ]
 EXTERNAL_TIERS: list[tuple[str, TierFn]] = [
+    ("llm", llm_scrape),
     ("firecrawl", firecrawl_scrape),
 ]
 
 
 def _tiers_for(site: SiteConfig) -> list[tuple[str, TierFn]]:
-    """Selector tiers only run for sites whose `has_selectors` is True."""
+    """Selector tiers only run for sites whose `has_selectors` is True.
+
+    LLM + Firecrawl are universal — they parse the search page's text /
+    Firecrawl's AI extraction, so they don't need per-site selectors.
+    """
     if site.has_selectors:
         return SELECTOR_TIERS + EXTERNAL_TIERS
     return EXTERNAL_TIERS
