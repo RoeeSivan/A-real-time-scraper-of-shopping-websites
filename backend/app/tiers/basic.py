@@ -17,7 +17,11 @@ HEADERS = {
         "Version/16.1 Safari/605.1.15"
     ),
     "Accept-Language": "da, en-gb, en",
-    "Accept-Encoding": "gzip, deflate, br",
+    # Only advertise encodings httpx auto-decodes. Including "br" or "zstd"
+    # makes some sites (BestBuy, Newegg) return brotli/zstd-compressed HTML
+    # that httpx hands back as raw bytes — tier 1 BS4 parses garbage,
+    # tier 3 LLM gets binary noise. Plain gzip/deflate is always decoded.
+    "Accept-Encoding": "gzip, deflate",
     "Accept": (
         "text/html,application/xhtml+xml,application/xml;q=0.9,"
         "image/avif,image/webp,*/*;q=0.8"
