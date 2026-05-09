@@ -13,6 +13,7 @@ import {
 } from "recharts";
 
 import { ScrapeResult } from "@/lib/types";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface PriceChartProps {
   results: ScrapeResult[];
@@ -28,11 +29,10 @@ interface ChartDatum {
 const BAR_COLOR = "#475569";
 const CHEAPEST_COLOR = "#16a34a";
 
-function formatPrice(price: number): string {
-  return `$${price.toFixed(2)}`;
-}
-
 export function PriceChart({ results }: PriceChartProps) {
+  const { format, currency, rate } = useCurrency();
+  const symbol = currency === "ILS" && rate !== null ? "₪" : "$";
+  const multiplier = currency === "ILS" && rate !== null ? rate : 1;
   // Only successful results with a positive price are charted. Failed sites
   // are intentionally hidden — comparing a real price against "$0" or "N/A"
   // is misleading on a bar chart.
@@ -50,7 +50,7 @@ export function PriceChart({ results }: PriceChartProps) {
   const cheapest = priced[0].price;
   const data: ChartDatum[] = priced.map((r) => ({
     site: r.site,
-    price: r.price,
+    price: r.price * multiplier,
     isCheapest: r.price === cheapest,
   }));
 
@@ -65,7 +65,7 @@ export function PriceChart({ results }: PriceChartProps) {
           <span className="font-semibold text-green-700">
             {priced[0].site}
           </span>{" "}
-          @ {formatPrice(cheapest)}
+          @ {format(cheapest)}
         </span>
       </div>
       <ResponsiveContainer width="100%" height={260}>
@@ -84,7 +84,7 @@ export function PriceChart({ results }: PriceChartProps) {
             tick={{ fill: "#475569", fontSize: 12 }}
             axisLine={{ stroke: "#cbd5e1" }}
             tickLine={false}
-            tickFormatter={(v: number) => `$${v}`}
+            tickFormatter={(v: number) => `${symbol}${v}`}
           />
           <Tooltip
             cursor={{ fill: "#f1f5f9" }}
@@ -93,7 +93,7 @@ export function PriceChart({ results }: PriceChartProps) {
               border: "1px solid #e2e8f0",
               fontSize: 12,
             }}
-            formatter={(v: number) => formatPrice(v)}
+            formatter={(v: number) => `${symbol}${v.toFixed(2)}`}
           />
           <Bar dataKey="price" radius={[4, 4, 0, 0]}>
             {data.map((d) => (
@@ -106,7 +106,9 @@ export function PriceChart({ results }: PriceChartProps) {
               dataKey="price"
               position="top"
               formatter={(value: unknown) =>
-                typeof value === "number" ? formatPrice(value) : ""
+                typeof value === "number"
+                  ? `${symbol}${value.toFixed(2)}`
+                  : ""
               }
               style={{ fill: "#1e293b", fontSize: 12, fontWeight: 600 }}
             />

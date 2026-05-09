@@ -3,9 +3,11 @@
 import { SearchBar } from "@/components/SearchBar";
 import { ResultsTable } from "@/components/ResultsTable";
 import { PriceChart } from "@/components/PriceChart";
+import { CurrencyToggle } from "@/components/CurrencyToggle";
+import { CurrencyProvider } from "@/hooks/useCurrency";
 import { useSearch } from "@/hooks/useSearch";
 
-export default function Home() {
+function HomeInner() {
   const { results, isSearching, error, search } = useSearch();
 
   return (
@@ -25,6 +27,10 @@ export default function Home() {
 
       <SearchBar onSearch={search} disabled={isSearching} />
 
+      <div className="w-full max-w-2xl mt-4 flex justify-end">
+        <CurrencyToggle />
+      </div>
+
       {error && (
         <div className="w-full max-w-3xl mt-6 rounded-md border border-[color:var(--color-coral-soft)] bg-[color:var(--color-coral-soft)]/20 px-4 py-3 text-sm text-[color:var(--color-brick)]">
           <strong className="font-medium">Something went wrong.</strong>{" "}
@@ -37,5 +43,13 @@ export default function Home() {
         <ResultsTable results={results} isSearching={isSearching} />
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <CurrencyProvider>
+      <HomeInner />
+    </CurrencyProvider>
   );
 }

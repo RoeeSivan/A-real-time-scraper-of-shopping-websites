@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import { ScrapeResult, TierAttempt } from "@/lib/types";
 import { StatusBadge } from "./StatusBadge";
+import { useCurrency } from "@/hooks/useCurrency";
 
 interface ResultRowProps {
   result: ScrapeResult | null;
@@ -50,13 +51,15 @@ function Skeleton({ width = "w-20" }: { width?: string }) {
 }
 
 export function ResultRow({ result, isLoading = false }: ResultRowProps) {
+  const { format } = useCurrency();
+
   if (!result && !isLoading) {
     return null;
   }
 
   const formatPrice = (price: number | null): string => {
     if (price === null) return "N/A";
-    return `$${price.toFixed(2)}`;
+    return format(price);
   };
 
   const trace = result?.tier_trace ?? [];

@@ -234,18 +234,39 @@ async def run_pipeline(site, query):
 
 ## What's left (open work, in priority order)
 
-1. **Frontend redesign — IN FLIGHT, half-done.** A "PRICE.TERMINAL"
-   aesthetic (Bloomberg-meets-CRT-phosphor: VT323 masthead, JetBrains Mono
-   body, Instrument Serif italic for product titles, scanline overlay,
-   amber-on-near-black, ASCII status badges, dotted-leader rows) was
-   started. **`layout.tsx` was switched from `Geist`/`Geist_Mono` to
-   `VT323`/`JetBrains_Mono`/`Instrument_Serif`, but `globals.css` and the
-   components were NOT yet rewritten.** `globals.css` still references
-   `--font-geist-sans`/`--font-geist-mono` (now undefined → fallback
-   monospace). Either finish the redesign (rewrite `globals.css`,
-   `page.tsx`, `SearchBar.tsx`, `StatusBadge.tsx`, `ResultsTable.tsx`,
-   `ResultRow.tsx`, add `LiveClock.tsx`) **or revert `layout.tsx`** to the
-   prior Geist setup. Do not leave it half-applied.
+> ✅ **Done 2026-05-09 — Frontend redesign (soft editorial).** PRICE.TERMINAL
+> was abandoned in favor of a calmer, magazine-like aesthetic the user
+> explicitly asked for ("human friendly and nice to look at"). Plan file:
+> `~/.claude/plans/lets-do-a-design-gentle-melody.md`. Rewrote
+> `layout.tsx` (Fraunces + Geist + Geist Mono), `globals.css` (Tailwind v4
+> `@theme` with cream/ink/coral/sage/amber/brick tokens — all CRT/scanline
+> CSS deleted), `page.tsx` (oversized italic-serif "Pricewise" wordmark,
+> coral accent), `SearchBar.tsx` (paper card with coral focus glow),
+> `ResultsTable.tsx` (hairline dividers, no zebra), `ResultRow.tsx`
+> (Fraunces italic product titles, tabular Geist Mono prices, soft cream
+> skeletons), `StatusBadge.tsx` (text-only "Found" / "No match" labels,
+> no pill backgrounds). **Favicon** installed via Next.js 16 App Router
+> convention: source `frontend/512 pricewise.png` copied to
+> `frontend/src/app/icon.png` and `frontend/src/app/apple-icon.png` —
+> Next auto-injects the `<link>` tags, no metadata config needed.
+
+1. **Wishlist / search history (next feature — user-requested).** Add an
+   "Add to wishlist" button per result row so a returning user can see
+   everything they previously searched for. Implementation sketch (no
+   external services needed for v1):
+   - **Storage:** `localStorage` keyed by query — store
+     `{ query, savedAt, results: ScrapeResult[] }`. Survives refreshes,
+     no backend, no auth. If the user wants cross-device later, swap to
+     a Supabase row keyed by anon UUID — but don't build that now.
+   - **UI:** small bookmark icon in the row's action column (next to
+     `View →`), filled when saved. Plus a `/wishlist` route (or a
+     drawer) that lists past queries with their cheapest price at save
+     time and a "search again" button that re-runs the SSE stream and
+     updates the entry.
+   - **Open question for user:** save **per-row** (one product on one
+     site) or save **per-query** (the whole 4-site comparison)? Default
+     recommendation: **per-query** — matches the assignment's framing
+     and is less click-heavy.
 
 2. **Step 8 — Per-site selectors for BestBuy / Walmart / Newegg.** Today
    they ride tier 4 only (`has_selectors=False`), so the demo's fallback
@@ -254,33 +275,40 @@ async def run_pipeline(site, query):
    run for cheaper/faster results, and the cascade is **visibly four-tier
    deep** for grading.
 
-3. **Step 12 — `PriceChart` (extra feature).** `recharts` bar chart of
-   per-site prices, cheapest highlighted, updates as SSE events arrive.
-   Drop into `app/page.tsx` above `ResultsTable`.
+3. **Step 12 — `PriceChart` polish (extra feature).** Already wired
+   into `page.tsx`, but currently has a pre-existing TS type error in
+   the recharts `formatter` prop. Tighten the type, restyle to match
+   the new soft-editorial palette (coral bars, cream background, no
+   harsh axis lines), and confirm cheapest is highlighted.
 
+> ✅ **Done 2026-05-09 — USD↔ILS toggle.** New
+> [lib/currency.ts](frontend/src/lib/currency.ts) (`formatPrice` helper),
+> [hooks/useCurrency.tsx](frontend/src/hooks/useCurrency.tsx) (context
+> provider that fetches `GET /rate?target=ILS` once on mount; falls back
+> to USD-only and disables the ILS pill if the fetch fails),
+> [components/CurrencyToggle.tsx](frontend/src/components/CurrencyToggle.tsx)
+> (pill toggle styled to match soft-editorial palette, shows live rate).
+> `<CurrencyProvider>` wraps `page.tsx`. `ResultRow` and `PriceChart`
+> route through `useCurrency().format()`; chart bars + axis + labels
+> rescale when switched to ILS. Backend untouched.
 
-the feature that we will add -  an "Add to wish list button". a user will be able to add something that he searched for, and when coming back he will ahve accessto see all the things that he had searched. - think of how to implement that and if we will need external services.
+> ✅ **Done 2026-05-09 — `LiveClock.tsx` deleted** (user). Resolves the
+> pre-existing `hour24` TS errors carried over from the abandoned
+> PRICE.TERMINAL aesthetic.
 
-
-
-4. **USD↔ILS frontend toggle.** Backend already done
-   ([backend/app/exchange.py](backend/app/exchange.py),
-   `GET /rate?target=ILS`). Fetch once on mount, store the rate in state,
-   render a toggle that multiplies USD prices on display only.
-
-5. **Cleanup before demo recording.** Remove the diagnostic `console.log`
+4. **Cleanup before demo recording.** Remove the diagnostic `console.log`
    calls in
    [frontend/src/lib/sse.ts](frontend/src/lib/sse.ts) and
    [frontend/src/hooks/useSearch.ts](frontend/src/hooks/useSearch.ts)
    (added during the empty-rows debug session — they were left in
-   intentionally).
+   intentionally). 
 
-6. **Step 13 — Polish + demo video.** README polish, error/loading states
+5. **Step 13 — Polish + demo video.** README polish, error/loading states
    tightened, smoke test on 3 queries (one easy: headphones; one with a
    typo / partial query; one out-of-stock or rare item to exercise the
    fallback gauntlet), then record the submission demo.
 
-7. **Amazon tier 1/2 price extraction is still flaky** — see Amazon
+6. **Amazon tier 1/2 price extraction is still flaky** — see Amazon
    follow-up below. Not blocking (tier 3 LLM and tier 4 Firecrawl both
    rescue it), but worth fixing for grading on the fallback narrative.
 
