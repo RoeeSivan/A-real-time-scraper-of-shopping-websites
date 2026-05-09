@@ -1,6 +1,23 @@
+import re
+
 from rapidfuzz import fuzz
 
 from app.models import Candidate
+
+# Variant suffixes that meaningfully change the product (Apple/Samsung style).
+# If a title contains one of these as a whole word and the query doesn't,
+# it's a different SKU — reject regardless of substring similarity. This
+# stops "iPhone 16" from matching "iPhone 16 Pro Max" at sim=100.
+VARIANT_TOKENS = ("pro", "max", "ultra", "plus", "mini")
+_VARIANT_PATTERNS = {tok: re.compile(rf"\b{tok}\b", re.IGNORECASE) for tok in VARIANT_TOKENS}
+
+
+def _title_has_extra_variant(query: str, title: str) -> bool:
+    """True if `title` contains a variant token that's absent from `query`."""
+    for tok, rx in _VARIANT_PATTERNS.items():
+        if rx.search(title) and not rx.search(query):
+            return True
+    return False
 
 # `partial_ratio` (best-substring match) discriminates much better than
 # `token_set_ratio` on real product titles, which are typically short queries
@@ -19,6 +36,8 @@ DEFAULT_THRESHOLD = 75.0
 def score(query: str, title: str) -> float:
     """0..100 best-substring similarity. Robust to verbose titles."""
     if not query or not title:
+        return 0.0
+    if _title_has_extra_variant(query, title):
         return 0.0
     return float(fuzz.partial_ratio(query.lower(), title.lower()))
 

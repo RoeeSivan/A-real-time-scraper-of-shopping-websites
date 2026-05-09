@@ -1,161 +1,69 @@
 @import "tailwindcss";
 
-:root {
-  --bg-terminal: #0f0a08;
-  --bg-dark: #1a1410;
-  --bg-input: #1f1410;
-  --fg-amber: #FFB347;
-  --fg-dim-amber: #CC8800;
-  --fg-success: #22FF00;
-  --fg-error: #FF3333;
-  --fg-border: #3d2f1f;
-  --font-heading: var(--font-vt323);
-  --font-body: var(--font-jetbrains-mono);
-  --font-title: var(--font-instrument-serif);
+@theme {
+  --color-cream: #faf6f0;
+  --color-paper: #ffffff;
+  --color-ink: #2a2622;
+  --color-muted: #7a6f62;
+  --color-hairline: #ece4d7;
+  --color-coral: #c75d3f;
+  --color-coral-soft: #e8a896;
+  --color-sage: #5c7a4a;
+  --color-amber: #b8893e;
+  --color-brick: #a6473a;
+
+  --font-display: var(--font-display), ui-serif, Georgia, serif;
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-
-  html, body {
+  html,
+  body {
     height: 100%;
   }
 
-  html {
-    background: var(--bg-terminal);
-  }
-
   body {
-    background: var(--bg-terminal);
-    color: var(--fg-amber);
-    font-family: var(--font-body);
-    font-size: 14px;
-    line-height: 1.5;
-    letter-spacing: 0.02em;
-    position: relative;
-    overflow-x: hidden;
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    letter-spacing: -0.005em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* CRT Scanline Effect */
-  body::before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: repeating-linear-gradient(
-      0deg,
-      rgba(0, 0, 0, 0.15),
-      rgba(0, 0, 0, 0.15) 1px,
-      transparent 1px,
-      transparent 2px
-    );
-    pointer-events: none;
-    z-index: 9999;
+  ::selection {
+    background: var(--color-coral-soft);
+    color: var(--color-ink);
   }
 
-  /* CRT Glow on text */
-  body {
-    text-shadow: 0 0 10px rgba(255, 179, 71, 0.3);
+  *:focus-visible {
+    outline: 2px solid var(--color-coral);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-heading);
-    letter-spacing: 0.05em;
-    font-weight: 700;
-  }
-
-  h1 {
-    font-size: 2.5rem;
-    color: var(--fg-amber);
-    text-shadow: 0 0 20px rgba(255, 179, 71, 0.5), 0 0 40px rgba(255, 179, 71, 0.2);
-  }
-
-  h2 {
-    font-size: 1.5rem;
-    color: var(--fg-amber);
-    text-shadow: 0 0 15px rgba(255, 179, 71, 0.4);
-  }
-
-  a {
-    color: var(--fg-amber);
-    text-decoration: underline;
-    transition: all 0.15s ease-out;
-  }
-
-  a:hover {
-    color: #FFD700;
-    text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
-  }
-
-  input, textarea, select {
-    font-family: var(--font-body);
-    background: var(--bg-input);
-    color: var(--fg-amber);
-    border: 2px solid var(--fg-dim-amber);
-    padding: 0.75rem 1rem;
-    font-size: 14px;
-    transition: all 0.15s ease-out;
-  }
-
-  input::placeholder {
-    color: var(--fg-dim-amber);
-    opacity: 0.6;
-  }
-
-  input:focus {
-    outline: none;
-    border-color: var(--fg-amber);
-    box-shadow: 0 0 15px rgba(255, 179, 71, 0.4), inset 0 0 10px rgba(255, 179, 71, 0.1);
-  }
-
-  button {
-    font-family: var(--font-body);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    color: var(--color-ink);
   }
 }
 
-@layer components {
-  .terminal-btn {
-    @apply px-4 py-2 bg-amber-700 text-amber-100 border-2 border-amber-600 hover:bg-amber-600 hover:shadow-lg hover:shadow-amber-600/50 transition-all active:scale-95;
-    font-family: var(--font-body);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    box-shadow: 0 0 10px rgba(255, 179, 71, 0.2);
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
   }
-
-  .terminal-btn:hover {
-    box-shadow: 0 0 20px rgba(255, 179, 71, 0.5);
+  .font-numeric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
-
-  .success-glow {
-    color: var(--fg-success);
-    text-shadow: 0 0 15px rgba(34, 255, 0, 0.6);
-  }
-
-  .error-glow {
-    color: var(--fg-error);
-    text-shadow: 0 0 15px rgba(255, 51, 51, 0.6);
-  }
-
-  .amber-glow {
-    text-shadow: 0 0 15px rgba(255, 179, 71, 0.4);
-  }
-
-  .terminal-border {
-    border: 2px solid var(--fg-dim-amber);
-    box-shadow: inset 0 0 10px rgba(255, 179, 71, 0.1);
+  .hairline {
+    border-color: var(--color-hairline);
   }
 }

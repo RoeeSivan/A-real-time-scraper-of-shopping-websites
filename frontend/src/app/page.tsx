@@ -9,27 +9,33 @@ export default function Home() {
   const { results, isSearching, error, search } = useSearch();
 
   return (
-    <main className="min-h-screen flex flex-col items-center gap-8 p-8 bg-slate-50">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold text-slate-900 mb-2">
-          Real-Time Product Scraper
+    <main className="min-h-screen flex flex-col items-center px-6 pb-24">
+      <div className="w-full max-w-3xl pt-20 pb-10 text-center">
+        <p className="text-xs uppercase tracking-[0.3em] text-muted mb-5">
+          A calmer price comparison
+        </p>
+        <h1 className="text-6xl md:text-7xl font-display text-ink leading-[1.05]">
+          Price<span className="italic text-coral">wise</span>
         </h1>
-        <p className="text-slate-600 text-base">
-          Search across Amazon, BestBuy, Walmart, and Newegg simultaneously
+        <p className="mt-5 text-base text-muted max-w-lg mx-auto">
+          Search once. We&rsquo;ll quietly check Amazon, Best Buy, Walmart,
+          and Newegg, and bring back the best matches we can find.
         </p>
       </div>
 
       <SearchBar onSearch={search} disabled={isSearching} />
 
       {error && (
-        <div className="w-full max-w-6xl rounded-md bg-red-100 px-4 py-3 text-sm text-red-800 border border-red-200">
-          <strong>Error:</strong> {error}
+        <div className="w-full max-w-3xl mt-6 rounded-md border border-[color:var(--color-coral-soft)] bg-[color:var(--color-coral-soft)]/20 px-4 py-3 text-sm text-[color:var(--color-brick)]">
+          <strong className="font-medium">Something went wrong.</strong>{" "}
+          {error}
         </div>
       )}
 
-      <PriceChart results={results} />
-
-      <ResultsTable results={results} isSearching={isSearching} />
+      <div className="w-full max-w-5xl mt-14 space-y-12">
+        <PriceChart results={results} />
+        <ResultsTable results={results} isSearching={isSearching} />
+      </div>
     </main>
   );
 }

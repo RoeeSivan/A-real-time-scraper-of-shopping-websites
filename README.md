@@ -32,29 +32,33 @@ OPENAI_API_KEY=<your openai key>
 Both keys are required to exercise the full 4-tier pipeline. Tiers 1 and 2 work
 without them; tier 3 needs `OPENAI_API_KEY`; tier 4 needs `FIRECRAWL_API_KEY`.
 
-### 2. Backend
+### 2. One-shot dev (recommended)
 
-Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
-
-```bash
-cd backend
-uv sync
-# Once tier 2 (browser) is wired in, also run:
-# uv run playwright install chromium
-uv run uvicorn app.main:app --reload --port 8000
-```
-
-Health check: <http://localhost:8000/health>
-
-### 3. Frontend
+From the repo root:
 
 ```bash
-cd frontend
-npm install      # already run by the bootstrap, but safe to repeat
-npm run dev
+./dev.sh
 ```
 
-Open <http://localhost:3000>.
+Starts both the backend (uvicorn :8000) and the frontend (next dev :3000) in
+one terminal, with logs prefixed `[backend]` / `[frontend]`. Ctrl+C stops both.
+
+Open <http://localhost:3000>. Backend health check: <http://localhost:8000/health>.
+
+### 3. Manual (two terminals)
+
+If you'd rather run them separately:
+
+```bash
+# Terminal A
+cd backend && uv sync && uv run uvicorn app.main:app --reload --port 8000
+
+# Terminal B
+cd frontend && npm install && npm run dev
+```
+
+First-time backend setup also needs `uv run playwright install chromium` for
+tier 2.
 
 ## Project layout
 

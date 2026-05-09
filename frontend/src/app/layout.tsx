@@ -1,32 +1,31 @@
 import type { Metadata } from "next";
-import { VT323, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-const vt323 = VT323({
-  weight: "400",
+const fraunces = Fraunces({
   subsets: ["latin"],
-  variable: "--font-vt323",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-  display: "swap",
-});
-
-const instrumentSerif = Instrument_Serif({
-  weight: "400",
   style: ["normal", "italic"],
+  variable: "--font-display",
+  display: "swap",
+  axes: ["opsz", "SOFT", "WONK"],
+});
+
+const geist = Geist({
   subsets: ["latin"],
-  variable: "--font-instrument-serif",
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "PRICE.TERMINAL ▸ multi-retailer interrogation",
+  title: "Pricewise — find the best price across stores",
   description:
-    "Live four-channel price feed across Amazon, BestBuy, Walmart, and Newegg.",
+    "A calmer way to compare live prices across Amazon, Best Buy, Walmart, and Newegg.",
 };
 
 export default function RootLayout({
@@ -37,9 +36,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${vt323.variable} ${jetbrainsMono.variable} ${instrumentSerif.variable} antialiased`}
+      className={`${fraunces.variable} ${geist.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="min-h-screen flex flex-col">{children}</body>
+      <body className="min-h-screen flex flex-col font-sans bg-cream text-ink">
+        {children}
+      </body>
     </html>
   );
 }
