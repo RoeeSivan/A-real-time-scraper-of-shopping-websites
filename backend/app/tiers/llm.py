@@ -30,7 +30,7 @@ from app.matching import score
 from app.models import Method, ScrapeResult, ScrapeStatus
 from app.sites.base import SiteConfig
 from app.tiers.basic import HEADERS, LOCALE_COOKIES, REQUEST_TIMEOUT
-from app.tiers.firecrawl import ProductExtraction, canonicalize_product_url
+from app.tiers.firecrawl import ProductExtraction, verified_product_url
 
 log = logging.getLogger(__name__)
 
@@ -183,7 +183,7 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     price = _coerce_float(extracted.price)
     rating = _coerce_float(extracted.rating)
     review_count = _coerce_int(extracted.review_count)
-    product_url = canonicalize_product_url(site.name, extracted.product_url)
+    product_url = await verified_product_url(site.name, extracted.product_url)
 
     sim = score(query, title)
     # Match firecrawl tier behaviour: if extraction gave a real title but

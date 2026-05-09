@@ -11,6 +11,7 @@ import logging
 import re
 from typing import Any
 
+import httpx
 from firecrawl import AsyncFirecrawl
 from firecrawl.v2.types import JsonFormat
 from pydantic import BaseModel, Field
@@ -34,8 +35,11 @@ def canonicalize_product_url(site_name: str, url: str | None) -> str | None:
 
     For Amazon, extract the ASIN and rebuild as `https://www.amazon.com/dp/<ASIN>`
     — strips slug, tracking params, and the rare image-CDN URL the LLM/Firecrawl
-    extractor sometimes produces. Returns `None` when no ASIN can be found, so
-    the validator can fall through to a deterministic search URL.
+    extractor sometimes produces. Returns `None` when no ASIN can be found.
+
+    Note: this is a *syntactic* fix. The ASIN itself may still be hallucinated
+    (LLM extractors confabulate plausible-looking 10-char IDs that don't
+    exist). Use `verified_product_url` to additionally HTTP-check the URL.
 
     For non-Amazon sites this is a no-op for now; their URL formats are simpler
     and slug-based, and we haven't observed broken links from those tiers.
@@ -47,6 +51,42 @@ def canonicalize_product_url(site_name: str, url: str | None) -> str | None:
         if m:
             asin = m.group(1).upper()
             return f"https://www.amazon.com/dp/{asin}"
+        return None
+    return url
+
+
+# Imports kept lazy inside the function so unit tests don't need to mock httpx
+# transports just to call `canonicalize_product_url`.
+async def verified_product_url(site_name: str, url: str | None) -> str | None:
+    """Run `canonicalize_product_url`, then for Amazon URLs make a live GET
+    to confirm the ASIN actually exists. Returns the URL on 200, `None` on
+    404 (Amazon's "Sorry, we couldn't find that page") or any error.
+
+    The bot-blocked variant of Amazon's 404 page is also a 404 by status,
+    so we trust the status code rather than parsing the body.
+    """
+    url = canonicalize_product_url(site_name, url)
+    if not url:
+        return None
+    if "amazon.com/dp/" not in url:
+        return url
+    # Lazy import — keeps `tiers.basic` headers as a single source of truth
+    # for the locale cookies that flip Amazon to USD.
+    from app.tiers.basic import HEADERS, LOCALE_COOKIES
+
+    try:
+        async with httpx.AsyncClient(
+            headers=HEADERS,
+            cookies=LOCALE_COOKIES,
+            timeout=10.0,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(url)
+    except Exception as exc:
+        log.warning("verified_product_url: amazon check failed for %s: %s", url, exc)
+        return None
+    if resp.status_code != 200:
+        log.info("verified_product_url: dropping bad amazon url %s (status=%s)", url, resp.status_code)
         return None
     return url
 
@@ -183,7 +223,7 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     price = _coerce_float(data.get("price"))
     rating = _coerce_float(data.get("rating"))
     review_count = _coerce_int(data.get("review_count"))
-    product_url = canonicalize_product_url(site.name, data.get("product_url"))
+    product_url = await verified_product_url(site.name, data.get("product_url"))
 
     if not title:
         return ScrapeResult(
