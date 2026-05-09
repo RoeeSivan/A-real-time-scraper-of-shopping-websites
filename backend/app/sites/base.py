@@ -44,9 +44,29 @@ class SiteConfig:
 
 # Shared text-extraction helpers (used by every site implementation).
 
+# Installment / financing markers. Walmart (T-Mobile, Affirm) and BestBuy
+# (Citizens Pay) often display a per-month or "down today" figure as the
+# headline number on the search card. We reject those — the user wants
+# the sticker price, not "$6/mo for 36 months". Without this filter,
+# `parse_price("$6/mo")` returned 6.0 and validators happily accepted a
+# $6 iPhone.
+_INSTALLMENT_MARKERS = (
+    "/mo", "/month", " month", "monthly",
+    "down today", "down payment", "/wk", "/week", " weekly",
+    "per month", "per week", "biweekly",
+)
+
+
 def parse_price(text: str | None) -> float | None:
-    """First decimal/integer in 'US $1,299.99' / '$332.54' / '€20'."""
+    """First decimal/integer in 'US $1,299.99' / '$332.54' / '€20'.
+
+    Returns None when the text looks like an installment / financing
+    figure rather than the sticker price (e.g. '$6/mo', '$25 down today').
+    """
     if not text:
+        return None
+    lower = text.lower()
+    if any(marker in lower for marker in _INSTALLMENT_MARKERS):
         return None
     cleaned = text.replace(",", "")
     match = re.search(r"\d+(?:\.\d+)?", cleaned)

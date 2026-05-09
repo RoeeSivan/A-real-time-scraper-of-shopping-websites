@@ -107,6 +107,24 @@ def test_parse_price_strips_commas_and_currency():
     assert parse_price("") is None
 
 
+def test_parse_price_rejects_installment_markers():
+    # Walmart (T-Mobile, Affirm) and BestBuy (Citizens Pay) often surface
+    # a per-month or "down today" figure as the headline number on search
+    # cards. Without this filter, the orchestrator accepted "$6/mo" as a
+    # legitimate iPhone price.
+    assert parse_price("$6/mo") is None
+    assert parse_price("$25 down today") is None
+    assert parse_price("$6 monthly") is None
+    assert parse_price("$899/month for 36 months") is None
+    assert parse_price("$50/wk") is None
+
+
+def test_parse_price_keeps_normal_prices_with_qualifiers():
+    # "Now $259.00, Was $398.00" is a real Walmart string — first number
+    # wins. The "Was" word does NOT trigger the installment filter.
+    assert parse_price("Now $259.00, Was $398.00") == 259.0
+
+
 def test_parse_rating_picks_first_decimal():
     assert parse_rating("4.7 out of 5 stars") == 4.7
     assert parse_rating("rated 5 stars") == 5.0

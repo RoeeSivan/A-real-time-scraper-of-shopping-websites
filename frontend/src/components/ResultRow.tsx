@@ -15,12 +15,16 @@ const TABLE_COL_COUNT = 8;
 function humanReason(error: string | null | undefined): string {
   if (!error) return "Unknown error";
   const lower = error.toLowerCase();
-  if (lower.includes("no candidates")) return "No matching listing on this site";
+  // Cases where every tier ran cleanly but no real listing was found —
+  // most often the site genuinely doesn't carry the queried product.
+  if (lower.includes("missing title")) return "Site doesn't appear to carry this product";
+  if (lower.includes("empty extraction")) return "Site doesn't appear to carry this product";
+  if (lower.includes("no candidates")) return "Site doesn't appear to carry this product";
   if (lower.includes("no candidate cleared")) return "No candidate matched the query well enough";
-  if (lower.includes("missing title")) return "No matching listing on this site";
   if (lower.includes("low similarity")) return "Found a listing, but it didn't match the query closely";
   if (lower.includes("non-positive price")) return "Site returned a non-positive price";
   if (lower.includes("captcha") || lower.includes("blocked")) return "Site bot-blocked the request";
+  if (lower.includes("payment required")) return "Firecrawl out of credits";
   if (lower.includes("openai") || lower.includes("llm")) return "AI extraction failed on this site";
   if (lower.includes("firecrawl")) return "External scraper couldn't extract a listing";
   if (lower.includes("all tiers failed")) return "No tier could extract a valid listing";

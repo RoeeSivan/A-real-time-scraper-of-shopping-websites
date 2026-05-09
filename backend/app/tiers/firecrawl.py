@@ -180,34 +180,49 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     search_url = site.build_search_url(query)
     log.debug("firecrawl: %s search_url=%s", site.name, search_url)
 
-    try:
-        doc = await fc.scrape(
-            search_url,
-            formats=[
-                JsonFormat(
-                    type="json",
-                    prompt=_build_prompt(query),
-                    schema=ProductExtraction,
-                )
-            ],
-            only_main_content=True,
-            location={"country": "US", "languages": ["en-US"]},
-        )
-    except Exception as exc:
-        log.error("firecrawl scrape error for %s: %s: %s", site.name, type(exc).__name__, exc)
-        return ScrapeResult(
-            site=site.name,
-            status=ScrapeStatus.FAILED,
-            error=f"firecrawl: {type(exc).__name__}: {str(exc)[:200]}",
-        )
+    # Firecrawl's AI extractor is non-deterministic — same query, same URL
+    # can return a populated dict on one call and `None` / empty on the
+    # next. Retry once on empty extraction before giving up. Costs at most
+    # one extra credit per site per search; small price for cutting the
+    # "row succeeded once, failed next refresh" UX flake.
+    last_error: str | None = None
+    extracted: Any = None
+    for attempt in range(2):
+        try:
+            doc = await fc.scrape(
+                search_url,
+                formats=[
+                    JsonFormat(
+                        type="json",
+                        prompt=_build_prompt(query),
+                        schema=ProductExtraction,
+                    )
+                ],
+                only_main_content=True,
+                location={"country": "US", "languages": ["en-US"]},
+            )
+        except Exception as exc:
+            log.error(
+                "firecrawl scrape error for %s (attempt %d): %s: %s",
+                site.name, attempt + 1, type(exc).__name__, exc,
+            )
+            last_error = f"{type(exc).__name__}: {str(exc)[:200]}"
+            continue
 
-    extracted = getattr(doc, "json", None)
+        extracted = getattr(doc, "json", None)
+        if extracted:
+            break
+        log.warning(
+            "firecrawl: %s returned no JSON extraction on attempt %d",
+            site.name, attempt + 1,
+        )
+        last_error = "empty extraction"
+
     if not extracted:
-        log.warning("firecrawl: %s returned no JSON extraction", site.name)
         return ScrapeResult(
             site=site.name,
             status=ScrapeStatus.FAILED,
-            error="firecrawl: empty extraction",
+            error=f"firecrawl: {last_error or 'empty extraction'}",
         )
 
     # Firecrawl may return either a dict or a model instance depending on SDK
