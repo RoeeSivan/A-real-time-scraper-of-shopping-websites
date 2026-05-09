@@ -41,8 +41,16 @@ def test_too_short_title_is_invalid():
     assert is_valid_result(make_result(title="iPad "), QUERY) is False
 
 
-def test_missing_price_is_invalid():
-    assert is_valid_result(make_result(price=None), QUERY) is False
+def test_missing_price_is_valid_when_product_url_present():
+    """Multi-variant cards (Amazon "see options") show no headline price.
+    We still surface the row so the user can click through and check."""
+    assert is_valid_result(make_result(price=None), QUERY) is True
+
+
+def test_missing_price_AND_missing_url_is_invalid():
+    """Without either a price or a URL, the row is unusable."""
+    r = make_result(price=None, product_url=None)
+    assert is_valid_result(r, QUERY) is False
 
 
 @pytest.mark.parametrize("price", [0, -1.0, -100.5])

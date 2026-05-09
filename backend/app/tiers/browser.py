@@ -77,6 +77,21 @@ async def browser_scrape(site: SiteConfig, query: str) -> ScrapeResult:
                     )
                 candidate, search_sim = picked
 
+                # Short-circuit: same trick as tier 1. If the search card
+                # carried full data, skip the product-page navigation.
+                if candidate.price is not None:
+                    return ScrapeResult(
+                        site=site.name,
+                        status=ScrapeStatus.SUCCESS,
+                        method=Method.BROWSER,
+                        title=candidate.title,
+                        price=candidate.price,
+                        rating=candidate.rating,
+                        review_count=candidate.review_count,
+                        product_url=candidate.url,
+                        similarity=search_sim,
+                    )
+
                 # 2) product page
                 await page.goto(candidate.url, wait_until="domcontentloaded")
                 product_html = await page.content()

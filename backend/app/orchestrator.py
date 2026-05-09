@@ -13,7 +13,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 
-from app.models import ScrapeResult, ScrapeStatus
+from app.models import ScrapeResult, ScrapeStatus, TierAttempt
 from app.sites.amazon import amazon
 from app.sites.base import SiteConfig
 from app.sites.bestbuy import bestbuy
@@ -52,27 +52,44 @@ def _tiers_for(site: SiteConfig) -> list[tuple[str, TierFn]]:
 
 
 async def run_pipeline(site: SiteConfig, query: str) -> ScrapeResult:
-    """Walk tiers for one site; return the first result that validates."""
+    """Walk tiers for one site; return the first result that validates.
+
+    Records every tier's outcome on the returned `ScrapeResult.tier_trace`
+    so the frontend can show the actual cascade (`basic ✗ → llm ✓` etc.).
+    """
     last_failure: ScrapeResult | None = None
+    trace: list[TierAttempt] = []
     for tier_name, tier_fn in _tiers_for(site):
         try:
             result = await tier_fn(site, query)
         except Exception as exc:  # belt-and-braces — tier funcs already catch
             log.warning("%s/%s raised: %s", site.name, tier_name, exc)
+            err = f"{type(exc).__name__}: {exc}"
+            trace.append(TierAttempt(tier=tier_name, outcome="errored", error=err))
             last_failure = ScrapeResult(
                 site=site.name,
                 status=ScrapeStatus.FAILED,
-                error=f"{tier_name}: {type(exc).__name__}: {exc}",
+                error=f"{tier_name}: {err}",
             )
             continue
 
         if is_valid_result(result, query):
             log.info("%s succeeded via tier=%s", site.name, tier_name)
+            trace.append(TierAttempt(tier=tier_name, outcome="succeeded"))
+            # Attach the trace so the row carries it through SSE.
+            result.tier_trace = trace
             return result
 
         log.info(
             "%s/%s rejected by validator: status=%s title=%r price=%r",
             site.name, tier_name, result.status, result.title, result.price,
+        )
+        trace.append(
+            TierAttempt(
+                tier=tier_name,
+                outcome="rejected",
+                error=result.error or _summarize_rejection(result),
+            )
         )
         last_failure = result
 
@@ -82,8 +99,26 @@ async def run_pipeline(site: SiteConfig, query: str) -> ScrapeResult:
             site=site.name,
             status=ScrapeStatus.FAILED,
             error=last_failure.error or "all tiers failed validation",
+            tier_trace=trace,
         )
-    return ScrapeResult.failed(site.name)
+    return ScrapeResult(
+        site=site.name,
+        status=ScrapeStatus.FAILED,
+        error="No tiers configured for this site",
+        tier_trace=trace,
+    )
+
+
+def _summarize_rejection(result: ScrapeResult) -> str:
+    """Human-friendly reason when a tier returned SUCCESS but the validator
+    rejected it (low similarity, missing fields, etc.)."""
+    if not result.title:
+        return "no title extracted"
+    if result.price is None and not result.product_url:
+        return "no price and no product link"
+    if result.price is not None and result.price <= 0:
+        return "non-positive price"
+    return "low similarity to query"
 
 
 async def run_all_sites(

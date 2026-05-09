@@ -183,7 +183,9 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     price = _coerce_float(extracted.price)
     rating = _coerce_float(extracted.rating)
     review_count = _coerce_int(extracted.review_count)
-    product_url = extracted.product_url or search_url
+    # Don't fall back to the search URL — see firecrawl.py for the same
+    # decision and reasoning.
+    product_url = extracted.product_url
 
     log.info(
         "llm %s: title=%r price=%s rating=%s reviews=%s",

@@ -146,7 +146,10 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     price = _coerce_float(data.get("price"))
     rating = _coerce_float(data.get("rating"))
     review_count = _coerce_int(data.get("review_count"))
-    product_url = data.get("product_url") or search_url
+    # Don't fall back to the search URL — if the extractor couldn't pin
+    # down a listing URL, leave this null so the validator can reject
+    # echo-back hallucinations (title=query, no real listing).
+    product_url = data.get("product_url")
 
     if not title:
         return ScrapeResult(

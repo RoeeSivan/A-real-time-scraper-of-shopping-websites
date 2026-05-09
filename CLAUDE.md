@@ -105,12 +105,25 @@ Phase B — Backend core (Python-first)
    `uv run playwright install chromium`. **Verified live**: stealth-passed
    Amazon, returned title/rating/reviews, and currency confirmed **USD**
    (`$39.99` etc., not `ILS…`). CLI: `uv run python -m app.cli "<q>" amazon browser`.
-5. ⏳ **Tier 3 (LLM) for Amazon** — `tiers/llm.py`. Feeds **visible text**
-   (not raw HTML) into GPT-4o-mini with a Pydantic schema. Acts as a
-   rescue parser when upstream selectors fail. **Deferred** — built tier 4
-   first as an "easy win" pivot. **OpenAI API reachability verified
-   2026-05-09** via 5-token ping (`gpt-4o-mini-2024-07-18` returned `ok`,
-   13 tokens billed) — key in `.env` works, so this step is unblocked.
+5. ✅ **Tier 3 (LLM rescue) — DONE 2026-05-09.** `tiers/llm.py` reuses
+   tier 1's `HEADERS` + `LOCALE_COOKIES` to fetch the **search page** with
+   httpx, strips to visible text via BeautifulSoup `.get_text(separator=" ")`
+   (drops `<script|style|noscript|svg|iframe>`), truncates to 25K chars
+   (cost cap, well under gpt-4o-mini's 128K context), then calls
+   `client.beta.chat.completions.parse(model="gpt-4o-mini", temperature=0,
+   response_format=ProductExtraction)` — OpenAI's structured-outputs API.
+   Imports `ProductExtraction` from `tiers/firecrawl.py` so both AI-driven
+   tiers share one Pydantic schema. Slotted into the orchestrator between
+   `browser` and `firecrawl` ([orchestrator.py:33-36](backend/app/orchestrator.py#L33-L36)).
+   **Cost note**: ~6K input tokens per call → fractions of a cent on
+   gpt-4o-mini. Live verified: Amazon "Sony WH-1000XM5" returned title /
+   $199.99 / 4.2★ / 19400 reviews in ~3.2s, OpenAI 200 OK.
+
+   **Side effect**: since BestBuy / Walmart / Newegg all have
+   `has_selectors=False`, the LLM tier is now their **primary** path
+   (firecrawl is the safety net beneath it). Amazon also goes LLM-first
+   today (selectors disabled — see Amazon follow-up). Methods badge in the
+   UI will mostly read `llm` until step 8 enables selectors.
 6. ✅ **Tier 4 (Firecrawl) — works for all 4 sites** (regressed → restored
    2026-05-09). `tiers/firecrawl.py` calls
    `AsyncFirecrawl.scrape(search_url, formats=[JsonFormat(type="json",
@@ -151,8 +164,21 @@ Phase D — Real-time + Frontend
     `EventSource` via `lib/sse.ts`, dedupes by `site`, cleans up on unmount.
     `app/page.tsx` renders `SearchBar` + `ResultsTable`; rows show skeletons
     until that site's `event: result` arrives, then flip to `ResultRow`
-    with `StatusBadge`. *Pending in this step:* USD↔ILS display toggle (see
-    follow-up below — backend already exposes `GET /rate?target=ILS`).
+    with `StatusBadge`. **Link column** added — opens `product_url` in a
+    new tab. *Pending in this step:* USD↔ILS display toggle, and a
+    distinctive visual redesign (currently in flight, see follow-up).
+
+    **Bugfixes baked in (2026-05-09):**
+    - `ResultsTable.tsx:7` — `SITES` array now matches backend casing
+      exactly (`"Amazon.com"`, `"BestBuy.com"`, `"Walmart.com"`,
+      `"Newegg.com"`). Lowercase keys silently produced an empty `<tbody>`.
+    - `ResultRow.tsx:24` — site cell renders `result.site` directly; the
+      old `charAt(0).toUpperCase() + slice(1) + ".com"` would have produced
+      `"Amazon.com.com"` once names matched.
+    - `sse.ts` — `error` listener now no-ops when `receivedDone === true`.
+      EventSource fires a spurious `error` after the server closes the
+      stream cleanly; without this guard, every successful run flashed the
+      red banner.
 
 Phase E — Polish
 12. ⏳ **Extra feature: PriceChart** — `recharts` bar chart of prices,
@@ -164,9 +190,15 @@ Phase E — Polish
 
 ### "Most similar product" (critical assignment requirement)
 - Score each search-page candidate title with
-  `rapidfuzz.fuzz.token_set_ratio(query, title)`.
-- Pick highest above threshold (default **55**); else fall through.
+  `rapidfuzz.fuzz.partial_ratio(query, title)` — **best-substring** match,
+  not token-set. The latter (used previously) collapsed real product /
+  wrong product / accessory titles to identical scores for verbose queries
+  like "Lenovo Tab P12-2024".
+- Pick highest above **`DEFAULT_THRESHOLD = 75.0`** in `matching.py`.
 - After product page is fetched, **re-verify** the final title's similarity.
+- Live benchmark documented in
+  [matching.py](backend/app/matching.py): real product 84.8, wrong product
+  66.7, accessory 78.9 (still passes — see follow-ups), unrelated ~25.
 
 ### Validation rules (`validators.py`)
 A `ScrapeResult` is valid iff:
@@ -202,26 +234,139 @@ async def run_pipeline(site, query):
 
 ## What's left (open work, in priority order)
 
-1. **Step 5 — Tier 3 (LLM rescue)** — write `tiers/llm.py`. OpenAI access
-   is already verified (see step 5). Plan: pull visible text from the
-   product page (not raw HTML), pass to `gpt-4o-mini` with a Pydantic
-   schema mirroring `ProductExtraction`, return a `ScrapeResult`. Slot it
-   into the orchestrator between `browser` and `firecrawl`.
+1. **Frontend redesign — IN FLIGHT, half-done.** A "PRICE.TERMINAL"
+   aesthetic (Bloomberg-meets-CRT-phosphor: VT323 masthead, JetBrains Mono
+   body, Instrument Serif italic for product titles, scanline overlay,
+   amber-on-near-black, ASCII status badges, dotted-leader rows) was
+   started. **`layout.tsx` was switched from `Geist`/`Geist_Mono` to
+   `VT323`/`JetBrains_Mono`/`Instrument_Serif`, but `globals.css` and the
+   components were NOT yet rewritten.** `globals.css` still references
+   `--font-geist-sans`/`--font-geist-mono` (now undefined → fallback
+   monospace). Either finish the redesign (rewrite `globals.css`,
+   `page.tsx`, `SearchBar.tsx`, `StatusBadge.tsx`, `ResultsTable.tsx`,
+   `ResultRow.tsx`, add `LiveClock.tsx`) **or revert `layout.tsx`** to the
+   prior Geist setup. Do not leave it half-applied.
+
 2. **Step 8 — Per-site selectors for BestBuy / Walmart / Newegg.** Today
-   they ride tier 4 only (`has_selectors=False`). Add `parse_search_candidates`
-   + `parse_product` so tiers 1+2 can run for cheaper/faster results.
+   they ride tier 4 only (`has_selectors=False`), so the demo's fallback
+   story is "LLM → Firecrawl" with no tier 1/2 in sight. Add
+   `parse_search_candidates` + `parse_product` to each so tiers 1+2 can
+   run for cheaper/faster results, and the cascade is **visibly four-tier
+   deep** for grading.
+
 3. **Step 12 — `PriceChart` (extra feature).** `recharts` bar chart of
    per-site prices, cheapest highlighted, updates as SSE events arrive.
-4. **Step 13 — Polish + demo video.** README polish, error/loading states,
-   smoke test on 3 queries, then record the submission demo.
-5. **USD↔ILS frontend toggle.** Backend done (`GET /rate?target=ILS`).
-   Frontend needs to fetch once on mount and multiply USD prices when
-   user clicks.
-6. **Amazon tier 1/2 price extraction is still flaky** — see follow-up
-   below. Not blocking since tier 4 (firecrawl) rescues it, but worth
-   fixing for assignment grading on the fallback story.
+   Drop into `app/page.tsx` above `ResultsTable`.
+
+
+the feature that we will add -  an "Add to wish list button". a user will be able to add something that he searched for, and when coming back he will ahve accessto see all the things that he had searched. - think of how to implement that and if we will need external services.
+
+
+
+4. **USD↔ILS frontend toggle.** Backend already done
+   ([backend/app/exchange.py](backend/app/exchange.py),
+   `GET /rate?target=ILS`). Fetch once on mount, store the rate in state,
+   render a toggle that multiplies USD prices on display only.
+
+5. **Cleanup before demo recording.** Remove the diagnostic `console.log`
+   calls in
+   [frontend/src/lib/sse.ts](frontend/src/lib/sse.ts) and
+   [frontend/src/hooks/useSearch.ts](frontend/src/hooks/useSearch.ts)
+   (added during the empty-rows debug session — they were left in
+   intentionally).
+
+6. **Step 13 — Polish + demo video.** README polish, error/loading states
+   tightened, smoke test on 3 queries (one easy: headphones; one with a
+   typo / partial query; one out-of-stock or rare item to exercise the
+   fallback gauntlet), then record the submission demo.
+
+7. **Amazon tier 1/2 price extraction is still flaky** — see Amazon
+   follow-up below. Not blocking (tier 3 LLM and tier 4 Firecrawl both
+   rescue it), but worth fixing for grading on the fallback narrative.
+
+## Known bugs (dedicated debugging session — not blockers individually)
+
+User flagged several quality issues across recent searches. Bundle these
+into a single focused session — most share root causes (LLM/Firecrawl
+non-determinism + similarity-only matching).
+
+1. **LLM non-determinism on Amazon for under-specified queries.** Same
+   query, consecutive runs, different outcomes:
+   - Run A: returns the *right* product ("Lenovo Tab P12 128 GB W128594033")
+     with `price=None` — multi-variant card, no headline price.
+     Validator (relaxed) now accepts via "See variants →" — ✓ user-facing OK.
+   - Run B: returns the *wrong* product ("Lenovo Idea Tab Pro") with a
+     real price ($335.24) — similarity 66.7 → validator rejects.
+   The model picks different listings each call. Mitigations:
+   `temperature=0` is already set; consider tightening the user prompt to
+   anchor on the query's primary identifier ("must contain 'P12-2024' or
+   'P12 (2024)' near the title start"), or re-ranking the top-K LLM
+   suggestions by our own similarity gate before extracting price.
+
+2. **Contract / down-payment prices showing as headline price.** Live
+   examples:
+   - "iPhone 16" on Walmart → tier 1 returned **$6.00** (T-Mobile
+     down-payment) for `T-Mobile iPhone 16 128GB Ultramarine`, not the
+     actual phone price.
+   - Title was correct; price extraction picked the marketing
+     "$6/month" or "$6 down" headline. Validator only checks `price > 0`.
+   Fix: a "plausible price" floor per query category (smartphones >$300,
+   laptops >$300, headphones >$30, …) — or compare extracted price
+   against Firecrawl's price for the same query and reject obvious
+   outliers.
+
+3. **Wrong-variant false positive (similarity = 100% by substring).**
+   Live: "iPhone 16" → Newegg returned `Refurbished iPhone 16 PRO MAX
+   512GB` at $1094.99, sim=100. Query "iPhone 16" is a substring of the
+   title, so partial_ratio rules it valid. Same family of bug as the
+   Sony XM4-vs-XM5 / Lenovo accessory cases already documented under
+   "Similarity metric still has known false positives" below.
+   Fix: same negative-keyword / model-number-anchoring approach.
+
+4. **Firecrawl extraction inconsistency.** For the same query, Firecrawl
+   sometimes returns `{title=valid, price=valid}`, sometimes
+   `{title=null, price=null}`, and sometimes `{title=query echoed,
+   price=null}`. The "echo" case is now safely rejected because we
+   stopped falling back `product_url` to the search URL (2026-05-09).
+   But it explains why some users see a row succeed once and fail the
+   next refresh. Mitigations: cache stable extractions for N seconds, or
+   retry once on empty extractions before falling through.
+
+5. **"Site does not carry this product" rendered as generic "Failed".**
+   When BestBuy / Newegg legitimately don't sell the queried item (e.g.
+   "Converse sneakers"), every tier returns null and the row says
+   "Failed". UX-wise this looks like a scraper bug. Add a `not_carried`
+   status (or just an inline subtitle on Failed rows: "No matching
+   listing on this site") so the user knows it's a domain reality, not
+   our fault.
+
+6. **No visible "tier trace" in the UI.** Every result rolls up to a
+   single `method` badge, but the cascade is one of the assignment's
+   key features. Add a small expandable per-row that shows
+   `basic ✗ → browser ✗ → llm ✗ → firecrawl ✓` so the grader (and the
+   user) can see the fall-through happen. Cheap to add: orchestrator
+   already has the info, just needs to be returned with `ScrapeResult`
+   and rendered.
 
 ## Follow-ups (revisit later, not blockers)
+
+- **Similarity metric still has known false positives** that no single
+  scalar score can resolve cleanly. With `partial_ratio` + threshold 75,
+  these all pass:
+  - **Same-family different version** — "Sony WH-1000XM5" matches
+    "Sony WH-1000XM4" at 96.6
+  - **Base vs Pro variants** — "iPhone 16" vs "iPhone 16 Pro Max" both 100
+  - **Accessory FOR product** — "Lenovo Tab P12-2024" vs
+    "BONAEVER Keyboard Case for Lenovo Tab P12" scores 78.9 → accepted
+    even though it's an accessory, not the tablet (observed live on
+    Newegg's Firecrawl extraction).
+
+  Resolving these requires either (a) an accessory/negative-keyword filter
+  (e.g. reject titles containing `case|cover|stand|cable|charger|adapter`
+  unless the *query* contains the same word), (b) a model-number extractor
+  that requires the query's primary model identifier to appear in the
+  title, or (c) asking the LLM/Firecrawl prompt to refuse accessories.
+  Out of scope until the assignment basics ship.
 
 - **Don't regress firecrawl back to markdown-only parsing.** On 2026-05-08
   the tier was rewritten to `formats=["markdown"]` + regex link scraping,

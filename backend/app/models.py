@@ -17,10 +17,30 @@ class ScrapeStatus(str, Enum):
 
 
 class Candidate(BaseModel):
-    """A search-page hit before we commit to fetching the product page."""
+    """A search-page hit before we commit to fetching the product page.
+
+    `price`/`rating`/`review_count` are optional. If a site renders the
+    full product info on its search-result card (e.g. Walmart), the site
+    parser can populate them here and the basic/browser tiers will skip
+    the redundant product-page fetch.
+    """
 
     title: str
     url: str
+    price: float | None = None
+    rating: float | None = None
+    review_count: int | None = None
+
+
+class TierAttempt(BaseModel):
+    """One tier's attempt during the cascade — succeeded, failed, or rejected
+    by the validator. Aggregated into `ScrapeResult.tier_trace` so the UI can
+    show the actual fall-through path (e.g. `basic ✗ → browser ✗ → llm ✓`).
+    """
+
+    tier: str  # "basic" | "browser" | "llm" | "firecrawl"
+    outcome: str  # "succeeded" | "rejected" | "errored"
+    error: str | None = None
 
 
 class ScrapeResult(BaseModel):
@@ -36,6 +56,7 @@ class ScrapeResult(BaseModel):
     product_url: str | None = None
     similarity: float | None = None
     error: str | None = None
+    tier_trace: list[TierAttempt] = []
 
     @classmethod
     def failed(cls, site: str, error: str = "All tiers failed") -> "ScrapeResult":

@@ -26,12 +26,21 @@ def is_valid_result(
 
     rating and review_count are intentionally optional — many legitimate
     products have no reviews yet.
+
+    `price` is also optional, but ONLY when we have a `product_url` — for
+    Amazon's multi-variant cards (the listing page shows "see options"
+    instead of a headline price) we still want to surface the row so the
+    user can click through and check variants. Without a URL, a missing
+    price is just an unusable result.
     """
     if result.status is not ScrapeStatus.SUCCESS:
         return False
     if not result.title or len(result.title.strip()) < MIN_TITLE_LEN:
         return False
-    if result.price is None or result.price <= 0:
+
+    if result.price is not None and result.price <= 0:
+        return False
+    if result.price is None and not result.product_url:
         return False
 
     title_lower = result.title.lower()

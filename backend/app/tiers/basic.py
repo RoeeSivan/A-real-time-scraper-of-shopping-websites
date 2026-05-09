@@ -78,6 +78,23 @@ async def basic_scrape(site: SiteConfig, query: str) -> ScrapeResult:
             )
         candidate, similarity = picked
 
+        # Short-circuit: if the search card already populated all of
+        # title+price (rating/reviews allowed null), skip the product-page
+        # fetch entirely. Sites like Walmart render everything we need on
+        # the search-results page itself.
+        if candidate.price is not None:
+            return ScrapeResult(
+                site=site.name,
+                status=ScrapeStatus.SUCCESS,
+                method=Method.BASIC,
+                title=candidate.title,
+                price=candidate.price,
+                rating=candidate.rating,
+                review_count=candidate.review_count,
+                product_url=candidate.url,
+                similarity=similarity,
+            )
+
         try:
             product_resp = await client.get(candidate.url)
             product_resp.raise_for_status()
