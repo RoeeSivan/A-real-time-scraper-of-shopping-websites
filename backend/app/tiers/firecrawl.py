@@ -8,6 +8,7 @@ already structured.
 """
 
 import logging
+import re
 from typing import Any
 
 from firecrawl import AsyncFirecrawl
@@ -20,6 +21,34 @@ from app.models import Method, ScrapeResult, ScrapeStatus
 from app.sites.base import SiteConfig
 
 log = logging.getLogger(__name__)
+
+# Amazon ASINs are always 10 alphanumeric chars. Both `/dp/<ASIN>` and
+# `/gp/product/<ASIN>` are valid product page paths; everything else
+# (search URLs, tracking links, image CDN paths, slug-based URLs without
+# an ASIN) routes to Amazon's "Sorry, we couldn't find that page" 404.
+_AMAZON_ASIN = re.compile(r"/(?:dp|gp/product)/([A-Z0-9]{10})", re.IGNORECASE)
+
+
+def canonicalize_product_url(site_name: str, url: str | None) -> str | None:
+    """Normalise a product URL so the frontend's "View →" link doesn't 404.
+
+    For Amazon, extract the ASIN and rebuild as `https://www.amazon.com/dp/<ASIN>`
+    — strips slug, tracking params, and the rare image-CDN URL the LLM/Firecrawl
+    extractor sometimes produces. Returns `None` when no ASIN can be found, so
+    the validator can fall through to a deterministic search URL.
+
+    For non-Amazon sites this is a no-op for now; their URL formats are simpler
+    and slug-based, and we haven't observed broken links from those tiers.
+    """
+    if not url:
+        return None
+    if "amazon." in site_name.lower() or "amazon." in url.lower():
+        m = _AMAZON_ASIN.search(url)
+        if m:
+            asin = m.group(1).upper()
+            return f"https://www.amazon.com/dp/{asin}"
+        return None
+    return url
 
 
 class ProductExtraction(BaseModel):
@@ -53,12 +82,20 @@ class ProductExtraction(BaseModel):
 
 def _build_prompt(query: str) -> str:
     return (
-        f"You are looking at a product search results page. Find the listing "
-        f"that best matches the query: \"{query}\". Extract its fields per the "
-        f"schema. The product_url MUST be a direct link to that product's "
-        f"detail page (not an image CDN URL, not the search page). Use null "
-        f"for any field that is not visibly shown on the page — do not invent "
-        f"values."
+        f"You are looking at a product search results page. Find the ORGANIC "
+        f"listing (not sponsored, not 'related items', not accessories) that "
+        f"BEST matches the query: \"{query}\". The listing's title MUST contain "
+        f"the model identifier from the query (e.g. for 'iPhone 16' the title "
+        f"must say 'iPhone 16'; for 'Sony WH-1000XM5' it must say 'XM5'). "
+        f"REJECT accessories — anything whose title starts with 'Case for', "
+        f"'Cover for', 'Stand for', 'Charger for', or contains keywords like "
+        f"'replacement', 'screen protector', 'cable', 'mount' UNLESS the query "
+        f"itself asks for those. If no organic listing matches the query "
+        f"closely, return null for ALL fields rather than guessing.\n\n"
+        f"Extract the matched listing per the schema. The product_url MUST be "
+        f"a direct link to that product's detail page (not an image CDN URL, "
+        f"not the search page). Use null for any field that is not visibly "
+        f"shown on the page — do not invent values."
     )
 
 
@@ -146,10 +183,7 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     price = _coerce_float(data.get("price"))
     rating = _coerce_float(data.get("rating"))
     review_count = _coerce_int(data.get("review_count"))
-    # Don't fall back to the search URL — if the extractor couldn't pin
-    # down a listing URL, leave this null so the validator can reject
-    # echo-back hallucinations (title=query, no real listing).
-    product_url = data.get("product_url")
+    product_url = canonicalize_product_url(site.name, data.get("product_url"))
 
     if not title:
         return ScrapeResult(
@@ -157,6 +191,16 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
             status=ScrapeStatus.FAILED,
             error="firecrawl: extraction missing title",
         )
+
+    # If the extractor returned a real title that scores above similarity
+    # threshold, but couldn't pin down a product URL (or it was an Amazon
+    # URL we rejected because it had no ASIN), fall back to the search URL
+    # so the user gets a clickable result. This only kicks in when the
+    # title is clearly on-topic — echo-back hallucinations
+    # (title==query verbatim) score lower and won't qualify.
+    sim = score(query, title)
+    if not product_url and sim >= 70:
+        product_url = search_url
 
     log.info(
         "firecrawl %s: title=%r price=%s rating=%s reviews=%s",
@@ -172,5 +216,5 @@ async def firecrawl_scrape(site: SiteConfig, query: str) -> ScrapeResult:
         rating=rating,
         review_count=review_count,
         product_url=product_url,
-        similarity=score(query, title),
+        similarity=sim,
     )

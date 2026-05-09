@@ -30,7 +30,7 @@ from app.matching import score
 from app.models import Method, ScrapeResult, ScrapeStatus
 from app.sites.base import SiteConfig
 from app.tiers.basic import HEADERS, LOCALE_COOKIES, REQUEST_TIMEOUT
-from app.tiers.firecrawl import ProductExtraction
+from app.tiers.firecrawl import ProductExtraction, canonicalize_product_url
 
 log = logging.getLogger(__name__)
 
@@ -183,9 +183,15 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     price = _coerce_float(extracted.price)
     rating = _coerce_float(extracted.rating)
     review_count = _coerce_int(extracted.review_count)
-    # Don't fall back to the search URL — see firecrawl.py for the same
-    # decision and reasoning.
-    product_url = extracted.product_url
+    product_url = canonicalize_product_url(site.name, extracted.product_url)
+
+    sim = score(query, title)
+    # Match firecrawl tier behaviour: if extraction gave a real title but
+    # the URL was missing or got rejected by canonicalize (e.g. Amazon
+    # URL with no extractable ASIN), fall back to the search URL so
+    # "View →" is still clickable.
+    if not product_url and sim >= 70:
+        product_url = search_url
 
     log.info(
         "llm %s: title=%r price=%s rating=%s reviews=%s",
@@ -201,5 +207,5 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
         rating=rating,
         review_count=review_count,
         product_url=product_url,
-        similarity=score(query, title),
+        similarity=sim,
     )

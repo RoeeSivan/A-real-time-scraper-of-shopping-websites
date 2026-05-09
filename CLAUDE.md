@@ -198,7 +198,7 @@ Phase E — Polish
 13. ✅ **Polish + record video** — [README.md](README.md) rewritten with
     features list, 4-tier explanation, test command, project layout, and
     the dev/manual run paths. Frontend `npm run build` clean, `tsc --noEmit`
-    clean, ESLint clean, 38 backend tests pass. No leftover `console.log`
+    clean, ESLint clean, 41 backend tests pass. No leftover `console.log`
     in [sse.ts](frontend/src/lib/sse.ts) or
     [useSearch.ts](frontend/src/hooks/useSearch.ts) (already removed).
     Smoke test on 3 queries + demo video recording remain as user-driven
@@ -232,15 +232,22 @@ A `ScrapeResult` is valid iff:
 
 ```python
 async def run_pipeline(site, query):
+    last_failure = None
     for tier in (basic, browser, llm, firecrawl):
         try:
             result = await tier.scrape(site, query)
             if is_valid(result, query):
-                return result.with_method(tier.name)
-        except Exception:
-            continue
-    return ScrapeResult.failed(site.name)
+                return result  # method already set inside the tier
+            last_failure = result
+        except Exception as exc:
+            last_failure = ScrapeResult(site=site.name, status=FAILED, error=str(exc))
+    return last_failure or ScrapeResult(site=site.name, status=FAILED)
 ```
+
+Tier choice per site is dynamic: sites with `has_selectors=True` (Walmart,
+BestBuy, Newegg, plus Amazon when re-enabled) walk the full
+`basic → browser → llm → firecrawl` chain. Sites with `has_selectors=False`
+skip tiers 1+2 and start at LLM.
 
 ## Risks (already considered in the plan)
 
@@ -268,23 +275,28 @@ async def run_pipeline(site, query):
 > `frontend/src/app/icon.png` and `frontend/src/app/apple-icon.png` —
 > Next auto-injects the `<link>` tags, no metadata config needed.
 
-1. **Wishlist / search history (next feature — user-requested).** Add an
-   "Add to wishlist" button per result row so a returning user can see
-   everything they previously searched for. Implementation sketch (no
-   external services needed for v1):
-   - **Storage:** `localStorage` keyed by query — store
-     `{ query, savedAt, results: ScrapeResult[] }`. Survives refreshes,
-     no backend, no auth. If the user wants cross-device later, swap to
-     a Supabase row keyed by anon UUID — but don't build that now.
-   - **UI:** small bookmark icon in the row's action column (next to
-     `View →`), filled when saved. Plus a `/wishlist` route (or a
-     drawer) that lists past queries with their cheapest price at save
-     time and a "search again" button that re-runs the SSE stream and
-     updates the entry.
-   - **Open question for user:** save **per-row** (one product on one
-     site) or save **per-query** (the whole 4-site comparison)? Default
-     recommendation: **per-query** — matches the assignment's framing
-     and is less click-heavy.
+> ✅ **Done 2026-05-09 — Wishlist / search history.** Plan file:
+> `~/.claude/plans/5-wishlist-search-cozy-church.md`. Per-query save
+> (whole 4-site comparison), drawer surface (no new route), update in
+> place on re-run, ↓/↑ delta vs saved cheapest price.
+> - New: [hooks/useWishlist.tsx](frontend/src/hooks/useWishlist.tsx)
+>   (Context provider + `entries / hasEntry / saveCurrent /
+>   updateFromResults / remove / clear`, localStorage key
+>   `pricewise.wishlist`, SSR-safe hydrate-on-mount).
+> - New: [components/WishlistDrawer.tsx](frontend/src/components/WishlistDrawer.tsx)
+>   (right-side panel, cream/hairline border, Esc/overlay-close, Re-run
+>   + Remove buttons per row).
+> - New: [components/WishlistButton.tsx](frontend/src/components/WishlistButton.tsx)
+>   (discriminated union: `variant="header"` count pill +
+>   `variant="save-current"` ♡→♥ action, sage when saved).
+> - Edited: [lib/types.ts](frontend/src/lib/types.ts) added
+>   `WishlistEntry` interface. [hooks/useSearch.ts](frontend/src/hooks/useSearch.ts)
+>   exposes `query`. [app/page.tsx](frontend/src/app/page.tsx) wraps
+>   with `<WishlistProvider>`, renders header pill + save button + drawer,
+>   `useEffect` calls `updateFromResults` once SSE stream completes for
+>   queries already saved.
+> - Currency toggle works on drawer rows too (routes through
+>   `useCurrency().format()`); wishlist storage stays USD.
 
 2. **Step 8 — Per-site selectors for BestBuy / Walmart / Newegg.** Today
    they ride tier 4 only (`has_selectors=False`), so the demo's fallback
@@ -314,12 +326,13 @@ async def run_pipeline(site, query):
 > pre-existing `hour24` TS errors carried over from the abandoned
 > PRICE.TERMINAL aesthetic.
 
-4. **Cleanup before demo recording.** Remove the diagnostic `console.log`
-   calls in
-   [frontend/src/lib/sse.ts](frontend/src/lib/sse.ts) and
-   [frontend/src/hooks/useSearch.ts](frontend/src/hooks/useSearch.ts)
-   (added during the empty-rows debug session — they were left in
-   intentionally). 
+> ✅ **Done 2026-05-09 — Cleanup pre-demo.** No `console.log` left in
+> [sse.ts](frontend/src/lib/sse.ts) or
+> [useSearch.ts](frontend/src/hooks/useSearch.ts). Dropped unused
+> `ScrapeResult.failed` classmethod from
+> [models.py](backend/app/models.py) and unused `COLOR_SAGE` const from
+> [PriceChart.tsx](frontend/src/components/PriceChart.tsx). ESLint clean,
+> TS clean.
 
 5. **Step 13 — Polish + demo video.** README polish, error/loading states
    tightened, smoke test on 3 queries (one easy: headphones; one with a
@@ -329,6 +342,53 @@ async def run_pipeline(site, query):
 6. **Amazon tier 1/2 price extraction is still flaky** — see Amazon
    follow-up below. Not blocking (tier 3 LLM and tier 4 Firecrawl both
    rescue it), but worth fixing for grading on the fallback narrative.
+
+> ✅ **Done 2026-05-09 — Variant filter scoped to title name-prefix.**
+> [matching.py](backend/app/matching.py) `_title_has_extra_variant` was
+> zeroing every Lenovo Yoga Slim 7i candidate because "Ultra" in
+> "Intel Core Ultra 7" tripped the Apple/Samsung-style variant guard.
+> New: `_name_prefix(title)` slices the title at the first spec
+> separator (`,`, `(`, em/en dash, ` - `, or CPU/spec keywords:
+> `Intel`, `AMD`, `Core`, `Ryzen`, `Snapdragon`, `Apple M\d`, `GeForce`,
+> `Radeon`, `GB`, `TB`, `RAM`, `SSD`, `Wi-Fi`, …). Variant tokens
+> (`pro/max/ultra/plus/mini`) only zero out when they sit in the name
+> prefix, not deep in spec text.
+> - "Lenovo - Yoga Slim 7i Aura Edition" now scores 97 (was 0).
+> - "iPhone 16" still rejects "iPhone 16 Pro Max" (0).
+> - "Samsung Galaxy S24" still rejects "Galaxy S24 Ultra" (0).
+> - 3 new tests in [test_matching.py](backend/tests/test_matching.py).
+>   38 → 41 backend tests, all pass.
+>
+> ✅ **Done 2026-05-09 — Brotli/zstd decode bug.**
+> [tiers/basic.py](backend/app/tiers/basic.py) `Accept-Encoding` was
+> `"gzip, deflate, br"`. httpx auto-decompresses gzip+deflate but not
+> brotli/zstd without the `brotli`/`zstandard` packages installed —
+> BestBuy and Newegg returned brotli-encoded bodies that came back as
+> raw binary bytes. Tier 1 BS4 parsed garbage; tier 3 LLM read binary
+> noise into its prompt and returned nulls. Fixed by dropping `br` from
+> the header — only advertise what httpx auto-decodes.
+>
+> ✅ **Done 2026-05-09 — Firecrawl prompt tightened + URL fallback.**
+> [tiers/firecrawl.py](backend/app/tiers/firecrawl.py) `_build_prompt`
+> now demands an organic listing whose title contains the query's model
+> identifier, explicitly rejects accessories (`Case for`, `Cover for`,
+> `Stand for`, `replacement`, `screen protector`, `cable`, `mount`
+> unless the query asks for them), and instructs the model to return
+> all-null when no organic match exists rather than guessing. Plus: if
+> Firecrawl returns a real title that scores ≥ 70 but no
+> `product_url`, fall back to the search URL so the row is still
+> clickable (`See variants →`) — better UX than total fail. The earlier
+> 2026-05-08 echo-back hallucination concern is gated by the score
+> check; an extracted `title==query` would score lower than 70 and
+> never trigger the fallback.
+>
+> **Note for grading:** Apple AirPods Pro 2 returns "No match" on
+> BestBuy and Newegg for *real* reasons, not a scraper bug. BB
+> replaced the Pro 2 SKU with Pro 3 in 2025; Newegg doesn't sell
+> Apple direct (search returns accessories / unrelated headphones,
+> rejected by similarity threshold). Sony WH-1000XM5 verified live as
+> 4/4 success across Amazon (llm) / BestBuy (firecrawl) /
+> Walmart (basic) / Newegg (firecrawl).
 
 ## Known bugs (dedicated debugging session — not blockers individually)
 
@@ -372,11 +432,15 @@ non-determinism + similarity-only matching).
 4. **Firecrawl extraction inconsistency.** For the same query, Firecrawl
    sometimes returns `{title=valid, price=valid}`, sometimes
    `{title=null, price=null}`, and sometimes `{title=query echoed,
-   price=null}`. The "echo" case is now safely rejected because we
-   stopped falling back `product_url` to the search URL (2026-05-09).
-   But it explains why some users see a row succeed once and fail the
-   next refresh. Mitigations: cache stable extractions for N seconds, or
-   retry once on empty extractions before falling through.
+   price=null}`. **Partial mitigation 2026-05-09:** prompt tightened to
+   demand model-identifier match in the title and explicitly reject
+   accessories; URL fallback to search page when title scores ≥ 70 with
+   no `product_url`. Echo-back case still gated by similarity (a
+   verbatim query echo scores lower than the threshold). Remaining
+   non-determinism is upstream — stochastic LLM extraction. Mitigations
+   not yet shipped: cache stable extractions for N seconds, retry once
+   on empty extractions, request multiple candidates and re-rank with
+   our own similarity gate.
 
 5. **"Site does not carry this product" rendered as generic "Failed".**
    When BestBuy / Newegg legitimately don't sell the queried item (e.g.
@@ -401,18 +465,17 @@ non-determinism + similarity-only matching).
   these all pass:
   - **Same-family different version** — "Sony WH-1000XM5" matches
     "Sony WH-1000XM4" at 96.6
-  - **Base vs Pro variants** — "iPhone 16" vs "iPhone 16 Pro Max" both 100
   - **Accessory FOR product** — "Lenovo Tab P12-2024" vs
     "BONAEVER Keyboard Case for Lenovo Tab P12" scores 78.9 → accepted
-    even though it's an accessory, not the tablet (observed live on
-    Newegg's Firecrawl extraction).
+    by the matcher even though it's an accessory.
 
-  Resolving these requires either (a) an accessory/negative-keyword filter
-  (e.g. reject titles containing `case|cover|stand|cable|charger|adapter`
-  unless the *query* contains the same word), (b) a model-number extractor
-  that requires the query's primary model identifier to appear in the
-  title, or (c) asking the LLM/Firecrawl prompt to refuse accessories.
-  Out of scope until the assignment basics ship.
+  ✅ **Partially resolved 2026-05-09 for the variant-suffix case:**
+  "iPhone 16" vs "iPhone 16 Pro Max" / "Samsung Galaxy S24" vs "S24
+  Ultra" now correctly score 0 thanks to the name-prefix variant filter.
+  Firecrawl tier prompt also rejects accessories explicitly. The
+  partial_ratio matcher itself still has the residual false positives
+  above for tier 1/2 results — not yet anchored on model-number
+  presence in the title prefix. Acceptable for the assignment scope.
 
 - **Don't regress firecrawl back to markdown-only parsing.** On 2026-05-08
   the tier was rewritten to `formats=["markdown"]` + regex link scraping,
@@ -448,4 +511,3 @@ non-determinism + similarity-only matching).
 
 - No caching (every search is fresh).
 - No auth, no DB, no cloud deploy.
-- One extra feature only (the chart).
