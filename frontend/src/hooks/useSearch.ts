@@ -8,6 +8,7 @@ interface UseSearchState {
   results: ScrapeResult[];
   isSearching: boolean;
   error: string | null;
+  query: string;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
@@ -17,6 +18,7 @@ export function useSearch() {
     results: [],
     isSearching: false,
     error: null,
+    query: "",
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -32,6 +34,7 @@ export function useSearch() {
       results: [],
       isSearching: true,
       error: null,
+      query,
     });
 
     // Start SSE stream

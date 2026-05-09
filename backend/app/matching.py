@@ -5,17 +5,45 @@ from rapidfuzz import fuzz
 from app.models import Candidate
 
 # Variant suffixes that meaningfully change the product (Apple/Samsung style).
-# If a title contains one of these as a whole word and the query doesn't,
-# it's a different SKU — reject regardless of substring similarity. This
-# stops "iPhone 16" from matching "iPhone 16 Pro Max" at sim=100.
+# If a title contains one of these as a whole word in the *name prefix* and
+# the query doesn't, it's a different SKU — reject regardless of substring
+# similarity. This stops "iPhone 16" from matching "iPhone 16 Pro Max" at
+# sim=100, while still allowing "Lenovo Yoga Slim 7i Aura Edition" to match
+# titles whose spec text mentions "Intel Core Ultra 7" (the CPU, not a
+# variant suffix).
 VARIANT_TOKENS = ("pro", "max", "ultra", "plus", "mini")
 _VARIANT_PATTERNS = {tok: re.compile(rf"\b{tok}\b", re.IGNORECASE) for tok in VARIANT_TOKENS}
 
+# Boundary markers that separate a product's *name* from its *spec text* in
+# typical retailer titles. Once we hit one of these, anything after it is
+# specs/marketing copy, not a variant suffix.
+_SPEC_SEPARATORS = re.compile(
+    r"[,\(\[]"            # commas, opening parens/brackets
+    r"|[–—]"    # en/em dashes
+    r"| - "                # hyphen with surrounding spaces
+    r"|\bIntel\b|\bAMD\b|\bSnapdragon\b|\bQualcomm\b"
+    r"|\bRyzen\b|\bCore\b|\bApple M\d\b|\bM\d\s*(Pro|Max|Ultra)?\b"
+    r"|\bGeForce\b|\bRadeon\b|\bNvidia\b"
+    r"|\bGB\b|\bTB\b|\bRAM\b|\bSSD\b|\bHDD\b"
+    r"|\bWi-?Fi\b|\bBluetooth\b",
+    re.IGNORECASE,
+)
+
+
+def _name_prefix(title: str) -> str:
+    """Return the slice of `title` before the first spec separator. Falls back
+    to the whole string if no separator is found."""
+    m = _SPEC_SEPARATORS.search(title)
+    return title[: m.start()] if m else title
+
 
 def _title_has_extra_variant(query: str, title: str) -> bool:
-    """True if `title` contains a variant token that's absent from `query`."""
+    """True if the title's name prefix contains a variant token absent from
+    the query. Variant tokens deep in spec text (e.g. "Intel Core Ultra 7"
+    inside a Lenovo Yoga listing) are intentionally ignored."""
+    prefix = _name_prefix(title)
     for tok, rx in _VARIANT_PATTERNS.items():
-        if rx.search(title) and not rx.search(query):
+        if rx.search(prefix) and not rx.search(query):
             return True
     return False
 

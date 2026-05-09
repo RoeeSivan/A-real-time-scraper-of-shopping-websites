@@ -22,3 +22,14 @@ export interface ScrapeResult {
   error: string | null;
   tier_trace: TierAttempt[];
 }
+
+export interface WishlistEntry {
+  query: string;
+  savedAt: number;
+  lastRunAt: number;
+  bestPriceAtSave: number | null;
+  bestSiteAtSave: string | null;
+  bestPriceNow: number | null;
+  bestSiteNow: string | null;
+  results: ScrapeResult[];
+}
