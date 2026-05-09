@@ -2,6 +2,7 @@
 
 import { SearchBar } from "@/components/SearchBar";
 import { ResultsTable } from "@/components/ResultsTable";
+import { PriceChart } from "@/components/PriceChart";
 import { useSearch } from "@/hooks/useSearch";
 
 export default function Home() {
@@ -25,6 +26,8 @@ export default function Home() {
           <strong>Error:</strong> {error}
         </div>
       )}
+
+      <PriceChart results={results} />
 
       <ResultsTable results={results} isSearching={isSearching} />
     </main>

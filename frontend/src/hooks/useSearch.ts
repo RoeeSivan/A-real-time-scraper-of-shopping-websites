@@ -22,8 +22,6 @@ export function useSearch() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const search = useCallback((query: string) => {
-    console.log("[useSearch] search() called with:", query, "API_BASE=", API_BASE);
-
     // Clean up any existing connection
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
