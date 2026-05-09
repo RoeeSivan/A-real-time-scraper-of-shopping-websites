@@ -151,8 +151,13 @@ Phase C — Multi-site
 7. ✅ **Orchestrator + Amazon end-to-end fallback** — `orchestrator.py` chains
    tiers 1→4 with the validation gate between each. Demo by forcing tier 1
    to fail.
-8. ⏳ **Add BestBuy + Walmart + Newegg** — new `sites/<name>.py` per site;
-   tiers stay generic.
+8. ✅ **Add BestBuy + Walmart + Newegg** — `sites/{bestbuy,walmart,newegg}.py`
+   each implement `build_search_url` + `parse_search_candidates` +
+   `parse_product` with `has_selectors=True`. Orchestrator's `_tiers_for`
+   routes them through tiers 1+2 first, then 3+4. Search-card short-circuit
+   in [tiers/basic.py](backend/app/tiers/basic.py) skips the product-page
+   fetch when the card already has price (Walmart/BB/Newegg all do). 38
+   pytest tests pass (8 BB/Walmart/Newegg fixture tests included).
 9. ✅ **Parallel orchestration** — `asyncio.gather(..., return_exceptions=True)`
    + `asyncio.Queue` for streaming. One-site failure does not block others.
 
@@ -181,10 +186,23 @@ Phase D — Real-time + Frontend
       red banner.
 
 Phase E — Polish
-12. ⏳ **Extra feature: PriceChart** — `recharts` bar chart of prices,
-    cheapest highlighted, updates as prices stream in.
-13. ⏳ **Polish + record video** — README polish, error/loading states, smoke
-    test on 3 queries, then the demo recording for submission.
+12. ✅ **Extra feature: PriceChart** — `recharts` bar chart of prices in
+    [PriceChart.tsx](frontend/src/components/PriceChart.tsx). Cheapest bar
+    rendered in `--color-coral` (`#c75d3f`), others in `--color-coral-soft`
+    (`#e8a896`); axis ticks/labels in muted ink, hairline X-axis, no Y-axis
+    line, mono tabular price labels above each bar. Header uses Fraunces
+    italic + sage cheapest-price callout, matching the soft-editorial
+    palette. USD↔ILS multiplier flows through `useCurrency()`. TS error in
+    `Tooltip` formatter fixed by typing `value` as `unknown` and narrowing
+    inline.
+13. ✅ **Polish + record video** — [README.md](README.md) rewritten with
+    features list, 4-tier explanation, test command, project layout, and
+    the dev/manual run paths. Frontend `npm run build` clean, `tsc --noEmit`
+    clean, ESLint clean, 38 backend tests pass. No leftover `console.log`
+    in [sse.ts](frontend/src/lib/sse.ts) or
+    [useSearch.ts](frontend/src/hooks/useSearch.ts) (already removed).
+    Smoke test on 3 queries + demo video recording remain as user-driven
+    final steps before submission.
 
 ## Domain notes
 

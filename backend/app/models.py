@@ -57,7 +57,3 @@ class ScrapeResult(BaseModel):
     similarity: float | None = None
     error: str | None = None
     tier_trace: list[TierAttempt] = []
-
-    @classmethod
-    def failed(cls, site: str, error: str = "All tiers failed") -> "ScrapeResult":
-        return cls(site=site, status=ScrapeStatus.FAILED, error=error)

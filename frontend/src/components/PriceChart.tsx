@@ -3,7 +3,6 @@
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
   LabelList,
   ResponsiveContainer,
@@ -25,17 +24,18 @@ interface ChartDatum {
   isCheapest: boolean;
 }
 
-// Slate-600 for non-winners, lime-600 for the cheapest bar.
-const BAR_COLOR = "#475569";
-const CHEAPEST_COLOR = "#16a34a";
+// Soft-editorial palette tokens (mirror @theme in globals.css).
+const COLOR_INK = "#2a2622";
+const COLOR_MUTED = "#7a6f62";
+const COLOR_HAIRLINE = "#ece4d7";
+const COLOR_CORAL_SOFT = "#e8a896";
+const COLOR_CORAL = "#c75d3f";
 
 export function PriceChart({ results }: PriceChartProps) {
   const { format, currency, rate } = useCurrency();
   const symbol = currency === "ILS" && rate !== null ? "₪" : "$";
   const multiplier = currency === "ILS" && rate !== null ? rate : 1;
-  // Only successful results with a positive price are charted. Failed sites
-  // are intentionally hidden — comparing a real price against "$0" or "N/A"
-  // is misleading on a bar chart.
+
   const priced = results
     .filter(
       (r): r is ScrapeResult & { price: number } =>
@@ -55,51 +55,55 @@ export function PriceChart({ results }: PriceChartProps) {
   }));
 
   return (
-    <div className="w-full max-w-6xl rounded-lg border border-slate-200 bg-white shadow-sm p-6">
-      <div className="mb-4 flex items-baseline justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Price Comparison
+    <section className="w-full max-w-6xl rounded-md border hairline bg-paper p-8">
+      <header className="mb-6 flex items-baseline justify-between gap-4">
+        <h2 className="font-display text-2xl italic tracking-tight">
+          Price comparison
         </h2>
-        <span className="text-sm text-slate-500">
+        <p className="text-sm text-muted">
           Cheapest:{" "}
-          <span className="font-semibold text-green-700">
+          <span className="font-display italic text-ink">
             {priced[0].site}
           </span>{" "}
-          @ {format(cheapest)}
-        </span>
-      </div>
-      <ResponsiveContainer width="100%" height={260}>
+          <span className="font-numeric text-sage">@ {format(cheapest)}</span>
+        </p>
+      </header>
+      <ResponsiveContainer width="100%" height={280}>
         <BarChart
           data={data}
-          margin={{ top: 24, right: 16, bottom: 8, left: 8 }}
+          margin={{ top: 28, right: 12, bottom: 8, left: 8 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis
             dataKey="site"
-            tick={{ fill: "#475569", fontSize: 12 }}
-            axisLine={{ stroke: "#cbd5e1" }}
+            tick={{ fill: COLOR_MUTED, fontSize: 12 }}
+            axisLine={{ stroke: COLOR_HAIRLINE }}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: "#475569", fontSize: 12 }}
-            axisLine={{ stroke: "#cbd5e1" }}
+            tick={{ fill: COLOR_MUTED, fontSize: 12 }}
+            axisLine={false}
             tickLine={false}
-            tickFormatter={(v: number) => `${symbol}${v}`}
+            tickFormatter={(v: number) => `${symbol}${v.toFixed(0)}`}
           />
           <Tooltip
-            cursor={{ fill: "#f1f5f9" }}
+            cursor={{ fill: "#faf6f0" }}
             contentStyle={{
-              borderRadius: 6,
-              border: "1px solid #e2e8f0",
+              borderRadius: 4,
+              border: `1px solid ${COLOR_HAIRLINE}`,
+              background: "#ffffff",
               fontSize: 12,
+              color: COLOR_INK,
             }}
-            formatter={(v: number) => `${symbol}${v.toFixed(2)}`}
+            formatter={(v) => [
+              typeof v === "number" ? `${symbol}${v.toFixed(2)}` : String(v),
+              "Price",
+            ]}
           />
-          <Bar dataKey="price" radius={[4, 4, 0, 0]}>
+          <Bar dataKey="price" radius={[3, 3, 0, 0]} maxBarSize={88}>
             {data.map((d) => (
               <Cell
                 key={d.site}
-                fill={d.isCheapest ? CHEAPEST_COLOR : BAR_COLOR}
+                fill={d.isCheapest ? COLOR_CORAL : COLOR_CORAL_SOFT}
               />
             ))}
             <LabelList
@@ -110,11 +114,16 @@ export function PriceChart({ results }: PriceChartProps) {
                   ? `${symbol}${value.toFixed(2)}`
                   : ""
               }
-              style={{ fill: "#1e293b", fontSize: 12, fontWeight: 600 }}
+              style={{
+                fill: COLOR_INK,
+                fontSize: 12,
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+              }}
             />
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </section>
   );
 }
