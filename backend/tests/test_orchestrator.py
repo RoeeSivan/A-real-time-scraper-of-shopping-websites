@@ -10,6 +10,14 @@ from app import orchestrator
 from app.models import Method, ScrapeResult, ScrapeStatus
 from app.sites.base import SiteConfig
 
+
+@pytest.fixture(autouse=True)
+def _clear_pipeline_cache():
+    """Cache persists across calls; reset between tests."""
+    orchestrator.clear_cache()
+    yield
+    orchestrator.clear_cache()
+
 QUERY = "Lenovo Tab P12-2024"
 GOOD_TITLE = "Lenovo Tab P12-2024 - Expansive Touchscreen Tablet, 12.7 Inch"
 
@@ -163,6 +171,46 @@ async def test_run_all_sites_yields_results_in_completion_order():
     assert completed == ["FastSite", "SlowSite"], (
         "fast site should yield first regardless of input order"
     )
+
+
+@pytest.mark.asyncio
+async def test_run_all_sites_caches_successful_results():
+    """Second call for the same (site, query) must hit cache, not the pipeline."""
+    site = _ExternalOnlySite()
+    site.name = "CachedSite"
+    call_count = 0
+
+    async def per_site(site, query):  # noqa: ARG001
+        nonlocal call_count
+        call_count += 1
+        return _result(Method.FIRECRAWL, site=site.name)
+
+    with patch.object(orchestrator, "run_pipeline", per_site):
+        first = [r async for r in orchestrator.run_all_sites(QUERY, sites=[site])]
+        second = [r async for r in orchestrator.run_all_sites(QUERY, sites=[site])]
+
+    assert call_count == 1, "second run must be served from cache"
+    assert first[0].site == second[0].site
+    assert first[0].title == second[0].title
+
+
+@pytest.mark.asyncio
+async def test_run_all_sites_does_not_cache_failures():
+    """Cache only stores successes — failed sites must retry on next call."""
+    site = _ExternalOnlySite()
+    site.name = "FlakySite"
+    call_count = 0
+
+    async def per_site(site, query):  # noqa: ARG001
+        nonlocal call_count
+        call_count += 1
+        return _failed_result("transient")
+
+    with patch.object(orchestrator, "run_pipeline", per_site):
+        [r async for r in orchestrator.run_all_sites(QUERY, sites=[site])]
+        [r async for r in orchestrator.run_all_sites(QUERY, sites=[site])]
+
+    assert call_count == 2, "failed result must not be cached"
 
 
 @pytest.mark.asyncio

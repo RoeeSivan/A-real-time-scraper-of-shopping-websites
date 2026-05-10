@@ -1,3 +1,5 @@
+import re
+
 from app.matching import DEFAULT_THRESHOLD, score
 from app.models import ScrapeResult, ScrapeStatus
 
@@ -14,7 +16,46 @@ BOT_CHECK_PHRASES = (
     "to discuss automated access",
 )
 
+# Accessory phrases — match if the title says "<accessory> for <something>" or
+# starts with the accessory term. Skipped if the query itself names the
+# accessory (e.g. "iPhone 16 case" should match cases).
+# Word-boundary regex avoids matching "case" inside "Briefcase".
+ACCESSORY_PATTERNS = (
+    re.compile(r"\bcase for\b", re.I),
+    re.compile(r"\bcover for\b", re.I),
+    re.compile(r"\bstand for\b", re.I),
+    re.compile(r"\bmount for\b", re.I),
+    re.compile(r"\bsleeve for\b", re.I),
+    re.compile(r"\bskin for\b", re.I),
+    re.compile(r"\breplacement\b", re.I),
+    re.compile(r"\bscreen protector\b", re.I),
+    re.compile(r"\bcharging cable\b", re.I),
+    re.compile(r"\bcharger for\b", re.I),
+)
+ACCESSORY_QUERY_TOKENS = (
+    "case", "cover", "stand", "mount", "sleeve", "skin",
+    "screen protector", "cable", "charger", "replacement",
+)
+
+# Reject refurbished / renewed / pre-owned listings — different price tier,
+# clutters the demo. Word-boundary regex to avoid false positives.
+REFURB_PATTERNS = (
+    re.compile(r"\brefurbished\b", re.I),
+    re.compile(r"\brenewed\b", re.I),
+    re.compile(r"\bpre[- ]owned\b", re.I),
+    re.compile(r"\bopen[- ]box\b", re.I),
+    re.compile(r"\bused\b", re.I),
+)
+REFURB_QUERY_TOKENS = ("refurbished", "renewed", "pre-owned", "preowned", "open box", "used")
+
 MIN_TITLE_LEN = 6
+
+
+def _query_allows(query: str, tokens: tuple[str, ...]) -> bool:
+    """True if the user's query itself contains one of these tokens — in which
+    case the corresponding filter is skipped."""
+    q = query.lower()
+    return any(t in q for t in tokens)
 
 
 def is_valid_result(
@@ -46,6 +87,14 @@ def is_valid_result(
     title_lower = result.title.lower()
     if any(phrase in title_lower for phrase in BOT_CHECK_PHRASES):
         return False
+
+    if not _query_allows(query, ACCESSORY_QUERY_TOKENS):
+        if any(p.search(result.title) for p in ACCESSORY_PATTERNS):
+            return False
+
+    if not _query_allows(query, REFURB_QUERY_TOKENS):
+        if any(p.search(result.title) for p in REFURB_PATTERNS):
+            return False
 
     if score(query, result.title) < threshold:
         return False

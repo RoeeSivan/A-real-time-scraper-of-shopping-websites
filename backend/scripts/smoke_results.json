@@ -1,0 +1,353 @@
+[
+  {
+    "query": "Sony WH-1000XM5",
+    "elapsed_total": 9.67,
+    "results": [
+      {
+        "site": "Walmart.com",
+        "status": "success",
+        "method": "basic",
+        "title": "Sony WH-1000XM5 The Best Wireless Noise Canceling Headphones, Black",
+        "price": 278.0,
+        "rating": 4.3,
+        "review_count": 1422,
+        "product_url": "https://www.walmart.com/ip/Sony-WH-1000XM5-The-Best-Wireless-Noise-Canceling-Headphones-Black/386006068?classType=VARIANT&from=/search",
+        "similarity": 100.0,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      },
+      {
+        "site": "Amazon.com",
+        "status": "failed",
+        "method": "n/a",
+        "title": null,
+        "price": null,
+        "rating": null,
+        "review_count": null,
+        "product_url": null,
+        "similarity": null,
+        "error": "firecrawl: empty extraction",
+        "tier_trace": [
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: search page text too short (0 chars) \u2014 likely bot-blocked"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "rejected",
+            "error": "firecrawl: empty extraction"
+          }
+        ]
+      },
+      {
+        "site": "Newegg.com",
+        "status": "success",
+        "method": "firecrawl",
+        "title": "Sony WH-1000XM5 Wireless Industry Leading Noise Canceling Headphones with Auto Noise Canceling Optimizer, Crystal Clear Hands-Free Calling, and Alexa Voice Control, Black",
+        "price": 239.95,
+        "rating": 3.4,
+        "review_count": null,
+        "product_url": "https://www.newegg.com/p/0TH-000U-00J17",
+        "similarity": 100.0,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "rejected",
+            "error": "basic: search fetch failed: Client error '403 Forbidden' for url 'https://www.newegg.com/p/pl?d=Sony+WH-1000XM5'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+          },
+          {
+            "tier": "browser",
+            "outcome": "rejected",
+            "error": "browser: no candidates parsed (challenge page or layout change)"
+          },
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: search fetch failed: Client error '403 Forbidden' for url 'https://www.newegg.com/p/pl?d=Sony+WH-1000XM5'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      },
+      {
+        "site": "BestBuy.com",
+        "status": "success",
+        "method": "firecrawl",
+        "title": "Sony - WH-1000XM5 Wireless Noise Cancelling Over-the-Ear Headphones - Silver",
+        "price": 256.99,
+        "rating": 4.6,
+        "review_count": 6287,
+        "product_url": "https://www.bestbuy.com/product/sony-wh-1000xm5-wireless-noise-cancelling-over-the-ear-headphones-silver/J7XSRH5CXV",
+        "similarity": 86.66666666666667,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "rejected",
+            "error": "basic: no candidates parsed (likely bot-blocked or layout changed)"
+          },
+          {
+            "tier": "browser",
+            "outcome": "rejected",
+            "error": "browser: no candidates parsed (challenge page or layout change)"
+          },
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: extraction missing title"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "iPhone 16",
+    "elapsed_total": 18.46,
+    "results": [
+      {
+        "site": "Walmart.com",
+        "status": "success",
+        "method": "basic",
+        "title": "Straight Talk Apple iPhone 16, 128GB, Black - Prepaid Smartphone [Locked to Straight Talk]",
+        "price": 529.0,
+        "rating": 4.4,
+        "review_count": 616,
+        "product_url": "https://www.walmart.com/ip/Straight-Talk-Apple-iPhone-16-128GB-Black-Prepaid-Smartphone-Locked-to-Straight-Talk/11632865509?classType=VARIANT&athbdg=L1300&from=/search",
+        "similarity": 100.0,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      },
+      {
+        "site": "Newegg.com",
+        "status": "failed",
+        "method": "n/a",
+        "title": null,
+        "price": null,
+        "rating": null,
+        "review_count": null,
+        "product_url": null,
+        "similarity": null,
+        "error": "all tiers failed validation",
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "rejected",
+            "error": "basic: search fetch failed: Client error '403 Forbidden' for url 'https://www.newegg.com/p/pl?d=iPhone+16'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+          },
+          {
+            "tier": "browser",
+            "outcome": "rejected",
+            "error": "browser: no candidates parsed (challenge page or layout change)"
+          },
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: search fetch failed: Client error '403 Forbidden' for url 'https://www.newegg.com/p/pl?d=iPhone+16'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "rejected",
+            "error": "low similarity to query"
+          }
+        ]
+      },
+      {
+        "site": "BestBuy.com",
+        "status": "success",
+        "method": "firecrawl",
+        "title": "Apple - iPhone 16 128GB - Apple Intelligence - Teal",
+        "price": 729.99,
+        "rating": 4.8,
+        "review_count": 591,
+        "product_url": "https://www.bestbuy.com/product/apple-iphone-16-128gb-apple-intelligence-unlocked-teal/JJGCQ866W5",
+        "similarity": 100.0,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "rejected",
+            "error": "basic: no candidates parsed (likely bot-blocked or layout changed)"
+          },
+          {
+            "tier": "browser",
+            "outcome": "rejected",
+            "error": "browser: no candidates parsed (challenge page or layout change)"
+          },
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: extraction missing title"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      },
+      {
+        "site": "Amazon.com",
+        "status": "failed",
+        "method": "n/a",
+        "title": null,
+        "price": null,
+        "rating": null,
+        "review_count": null,
+        "product_url": null,
+        "similarity": null,
+        "error": "all tiers failed validation",
+        "tier_trace": [
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: search page text too short (0 chars) \u2014 likely bot-blocked"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "rejected",
+            "error": "low similarity to query"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "Lenovo Yoga Slim 7i",
+    "elapsed_total": 11.57,
+    "results": [
+      {
+        "site": "Walmart.com",
+        "status": "success",
+        "method": "basic",
+        "title": "Lenovo Yoga Slim 7i 15ILL9 Aura Edition Copilot+ Laptop Intel Core Ultra 7 256V, 15.3 WUXGA 120Hz Touch, 16GB LPDDR5X RAM 1TB SSD, WiFi7, Backlit Keyboard, Win11, Luna Grey, w/2TB USB Drive",
+        "price": 1289.0,
+        "rating": null,
+        "review_count": null,
+        "product_url": "https://www.walmart.com/ip/Lenovo-Yoga-Slim-7i-15ILL9-Aura-Edition-Copilot-Laptop-Intel-Core-Ultra-7-256V-15-3-WUXGA-120Hz-Touch-16GB-LPDDR5X-RAM-1TB-SSD-WiFi7-Backlit-Keyboard/20145769109?classType=REGULAR&from=/search",
+        "similarity": 100.0,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      },
+      {
+        "site": "Amazon.com",
+        "status": "failed",
+        "method": "n/a",
+        "title": null,
+        "price": null,
+        "rating": null,
+        "review_count": null,
+        "product_url": null,
+        "similarity": null,
+        "error": "firecrawl: empty extraction",
+        "tier_trace": [
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: search page text too short (0 chars) \u2014 likely bot-blocked"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "rejected",
+            "error": "firecrawl: empty extraction"
+          }
+        ]
+      },
+      {
+        "site": "BestBuy.com",
+        "status": "success",
+        "method": "firecrawl",
+        "title": "Lenovo - Yoga Slim 7i Aura Edition - Copilot+ PC - 15.3\u201d 3K 120Hz Touchscreen Laptop - Intel Core Ultra 7 256V 2024 - 16GB - 1TB - Luna Gray",
+        "price": 949.99,
+        "rating": 4.5,
+        "review_count": 193,
+        "product_url": "https://www.bestbuy.com/product/lenovo-yoga-slim-7i-aura-edition-copilot-pc-15-3-3k-120hz-touchscreen-laptop-intel-core-ultra-7-256v-2024-16gb-1tb-luna-gray/JJGSQV3693/sku/6594998",
+        "similarity": 89.47368421052632,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "rejected",
+            "error": "basic: no candidates parsed (likely bot-blocked or layout changed)"
+          },
+          {
+            "tier": "browser",
+            "outcome": "rejected",
+            "error": "browser: no candidates parsed (challenge page or layout change)"
+          },
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: extraction missing title"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      },
+      {
+        "site": "Newegg.com",
+        "status": "success",
+        "method": "firecrawl",
+        "title": "Lenovo - Yoga Slim 7i Aura Edition - Copilot+ PC - 15.3 3K Touchscreen Laptop - Intel Core Ultra 7 - 16GB Memory - 1TB SSD - Luna Gray Notebook",
+        "price": 1199.0,
+        "rating": null,
+        "review_count": null,
+        "product_url": "https://www.newegg.com/lenovo-15-3/p/1TS-000E-1BXE2",
+        "similarity": 89.47368421052632,
+        "error": null,
+        "tier_trace": [
+          {
+            "tier": "basic",
+            "outcome": "rejected",
+            "error": "basic: search fetch failed: Client error '403 Forbidden' for url 'https://www.newegg.com/p/pl?d=Lenovo+Yoga+Slim+7i'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+          },
+          {
+            "tier": "browser",
+            "outcome": "rejected",
+            "error": "browser: no candidates parsed (challenge page or layout change)"
+          },
+          {
+            "tier": "llm",
+            "outcome": "rejected",
+            "error": "llm: search fetch failed: Client error '403 Forbidden' for url 'https://www.newegg.com/p/pl?d=Lenovo+Yoga+Slim+7i'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+          },
+          {
+            "tier": "firecrawl",
+            "outcome": "succeeded",
+            "error": null
+          }
+        ]
+      }
+    ]
+  }
+]

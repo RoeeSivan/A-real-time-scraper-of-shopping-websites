@@ -11,6 +11,7 @@ selectors).
 
 import asyncio
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from app.models import ScrapeResult, ScrapeStatus, TierAttempt
@@ -26,6 +27,34 @@ from app.tiers.llm import llm_scrape
 from app.validators import is_valid_result
 
 log = logging.getLogger(__name__)
+
+# In-memory pipeline cache. Keyed by (site_name, query_lower); only successful
+# results are cached so failures keep retrying with fresh tier runs.
+# TTL is short (60s) so demo replays are stable but the data stays fresh.
+CACHE_TTL_SECONDS = 60
+_pipeline_cache: dict[tuple[str, str], tuple[float, ScrapeResult]] = {}
+
+
+def _cache_get(site_name: str, query: str) -> ScrapeResult | None:
+    key = (site_name, query.strip().lower())
+    entry = _pipeline_cache.get(key)
+    if entry is None:
+        return None
+    expires_at, result = entry
+    if time.monotonic() > expires_at:
+        _pipeline_cache.pop(key, None)
+        return None
+    return result
+
+
+def _cache_put(site_name: str, query: str, result: ScrapeResult) -> None:
+    key = (site_name, query.strip().lower())
+    _pipeline_cache[key] = (time.monotonic() + CACHE_TTL_SECONDS, result)
+
+
+def clear_cache() -> None:
+    """Test/CLI hook — drop all cached entries."""
+    _pipeline_cache.clear()
 
 ALL_SITES: list[SiteConfig] = [amazon, bestbuy, walmart, newegg]
 
@@ -133,14 +162,21 @@ async def run_all_sites(
     targets = sites or ALL_SITES
 
     async def _safe(site: SiteConfig) -> ScrapeResult:
+        cached = _cache_get(site.name, query)
+        if cached is not None:
+            log.info("%s served from cache", site.name)
+            return cached
         try:
-            return await run_pipeline(site, query)
+            result = await run_pipeline(site, query)
         except Exception as exc:  # final guard — one site never breaks the run
             return ScrapeResult(
                 site=site.name,
                 status=ScrapeStatus.FAILED,
                 error=f"orchestrator: {type(exc).__name__}: {exc}",
             )
+        if result.status is ScrapeStatus.SUCCESS:
+            _cache_put(site.name, query, result)
+        return result
 
     tasks = [asyncio.create_task(_safe(site)) for site in targets]
     for completed in asyncio.as_completed(tasks):

@@ -78,3 +78,49 @@ def test_missing_rating_and_reviews_still_valid():
     """Many real product pages legitimately have no reviews — these are optional."""
     r = make_result(rating=None, review_count=None)
     assert is_valid_result(r, QUERY) is True
+
+
+# Accessory filter — reject "Case for X", "Cover for X" etc unless the query
+# itself asks for accessories.
+
+def test_accessory_case_for_is_invalid():
+    r = make_result(title="BONAEVER Keyboard Case for Lenovo Tab P12")
+    assert is_valid_result(r, QUERY) is False
+
+
+def test_accessory_cover_for_is_invalid():
+    r = make_result(title="ProCase Cover for Lenovo Tab P12-2024 Tablet")
+    assert is_valid_result(r, QUERY) is False
+
+
+def test_accessory_screen_protector_is_invalid():
+    r = make_result(title="Lenovo Tab P12 Screen Protector 3-Pack Tempered Glass")
+    assert is_valid_result(r, QUERY) is False
+
+
+def test_accessory_allowed_when_query_asks_for_it():
+    """Query says 'case' — accessory filter must skip and let the listing through."""
+    r = make_result(title="Premium Leather Case for iPhone 16 Pro Max - Black")
+    assert is_valid_result(r, "iPhone 16 Pro Max case") is True
+
+
+# Refurb filter — reject Renewed/Refurbished/Pre-Owned unless query asks.
+
+def test_refurbished_is_invalid():
+    r = make_result(title="Refurbished Lenovo Tab P12-2024 Tablet 12.7 inch")
+    assert is_valid_result(r, QUERY) is False
+
+
+def test_renewed_is_invalid():
+    r = make_result(title="Lenovo Tab P12-2024 Tablet 12.7 inch (Renewed)")
+    assert is_valid_result(r, QUERY) is False
+
+
+def test_pre_owned_is_invalid():
+    r = make_result(title="Lenovo Tab P12-2024 Pre-Owned Tablet 12.7 inch")
+    assert is_valid_result(r, QUERY) is False
+
+
+def test_refurb_allowed_when_query_asks_for_it():
+    r = make_result(title="Lenovo Tab P12-2024 Refurbished Tablet 12.7 inch")
+    assert is_valid_result(r, "Lenovo Tab P12-2024 refurbished") is True

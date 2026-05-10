@@ -88,6 +88,12 @@ A `ScrapeResult` is valid iff:
   (multi-variant Amazon cards → "See variants →" link)
 - title has no bot-check phrases (`robot check`, `captcha`, `enter the
   characters`, …)
+- title is not an accessory listing (`case for`, `cover for`, `stand for`,
+  `mount for`, `sleeve for`, `skin for`, `replacement`, `screen protector`,
+  `charging cable`, `charger for`) — skipped if the query itself names the
+  accessory (e.g. "iPhone 16 case")
+- title is not refurbished/renewed/pre-owned (`refurbished`, `renewed`,
+  `pre-owned`, `open-box`, `used`) — skipped if the query asks for it
 - `score(query, title) >= 75`
 - `rating` / `review_count` may be null
 
@@ -113,12 +119,18 @@ A `ScrapeResult` is valid iff:
   `Stand for`, `replacement`, `screen protector`, `cable`, `mount`)
   unless the query asks for them; instructs nulls instead of guesses.
   Retries once on empty extraction.
+- **Pipeline cache:** [`orchestrator.py`](backend/app/orchestrator.py)
+  keeps a 60s in-memory dict keyed `(site_name, query_lower)` →
+  `ScrapeResult`. Only successes cached; failures keep retrying. Kills
+  Firecrawl non-determinism for demo replays. Reset via `clear_cache()`.
 - **CLI:** `uv run python -m app.cli "<query>" <site> <tier>` —
   isolates one site×tier combo for debugging.
+- **Smoke test:** `uv run python -m scripts.smoke_test` runs 3 queries
+  end-to-end through the cascade; output → `backend/scripts/smoke_results.json`.
 
 ## Status
 
-All 13 build phases ✅ shipped. Backend: 50 offline tests pass.
+All 13 build phases ✅ shipped. Backend: 60 offline tests pass.
 Frontend: `npm run build` clean, ESLint clean, Next prod build green.
 
 Live verified on **Sony WH-1000XM5** (4/4 sites): Amazon (llm) /
@@ -127,7 +139,8 @@ resolve. Demo-ready.
 
 ## Open work (priority order)
 
-1. **Smoke-test 3 queries + record demo video** — final submission step.
+1. **Record demo video** — final submission step. Smoke test ✅ done
+   (`uv run python -m scripts.smoke_test`, 3-query baseline saved).
 2. **Per-site selectors for Amazon (re-enable `has_selectors=True`)** —
    currently disabled because `span.a-offscreen` selector picks
    accessory/refurb prices on multi-offer pages. LLM/Firecrawl rescue
@@ -137,13 +150,10 @@ resolve. Demo-ready.
    wrong even after the installment filter. Compare against Firecrawl
    for the same query and reject obvious outliers.
 4. **Wrong-variant residual false positives** — "Sony WH-1000XM5"
-   matches "WH-1000XM4" at 96 (same-family different version);
-   "Lenovo Tab P12-2024" vs "BONAEVER Keyboard Case for Lenovo Tab P12"
-   = 78.9 (accessory). Fix is either (a) accessory negative-keyword
-   filter at the matcher level, (b) require model-number anchor in
-   title prefix, or (c) keep the Firecrawl prompt-side filter.
-5. **Cache stable extractions for N seconds** — kill non-determinism for
-   demo replays.
+   matches "WH-1000XM4" at 96 (same-family different version).
+   Fix options: (a) require model-number anchor in title prefix,
+   (b) keep the Firecrawl prompt-side filter. Accessory leak ("Keyboard
+   Case for Lenovo Tab P12") now blocked at validator level ✅.
 
 ## Known follow-ups (non-blocking)
 
