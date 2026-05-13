@@ -81,6 +81,49 @@ def test_product_handles_missing_optional_fields():
     assert fields.review_count is None
 
 
+def test_product_multi_offer_picks_buy_box_not_accessory():
+    """On multi-offer pages Amazon renders accessory prices via the same
+    ``span.a-offscreen`` class — sometimes BEFORE the buy-box container in
+    the DOM. The focused-selector chain must pick the corePriceDisplay
+    value (the actual product price), not the accessory leak.
+    """
+    html = """
+    <html><body>
+      <span id="productTitle">Apple iPhone 16 Pro Max 256GB</span>
+
+      <!-- Frequently-bought accessory (case) renders FIRST. -->
+      <div id="hsx-frequently-bought-together">
+        <span class="a-price"><span class="a-offscreen">$9.99</span></span>
+      </div>
+
+      <!-- Real buy-box price. -->
+      <div id="corePriceDisplay_desktop_feature_div">
+        <span class="a-price"><span class="a-offscreen">$1,199.00</span></span>
+      </div>
+
+      <!-- Refurb offer also on the page, lower than the buy-box. -->
+      <div id="usedAndNewSection">
+        <span class="a-price"><span class="a-offscreen">$899.00</span></span>
+      </div>
+    </body></html>
+    """
+    fields = amazon.parse_product(html)
+    assert fields.price == 1199.00
+
+
+def test_product_falls_back_to_generic_offscreen_when_focused_missing():
+    """If none of the focused buy-box selectors hit, the generic
+    ``span.a-offscreen`` fallback still surfaces a price."""
+    html = """
+    <html><body>
+      <span id="productTitle">Generic Product</span>
+      <span class="a-price"><span class="a-offscreen">$42.00</span></span>
+    </body></html>
+    """
+    fields = amazon.parse_product(html)
+    assert fields.price == 42.00
+
+
 def test_product_falls_back_to_acrPopover_title_attr_for_rating():
     html = """
     <html><body>

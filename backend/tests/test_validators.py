@@ -124,3 +124,21 @@ def test_pre_owned_is_invalid():
 def test_refurb_allowed_when_query_asks_for_it():
     r = make_result(title="Lenovo Tab P12-2024 Refurbished Tablet 12.7 inch")
     assert is_valid_result(r, "Lenovo Tab P12-2024 refurbished") is True
+
+
+# Plausible-price floor — reject accessory/installment leaks even when the
+# title looks right (e.g. an iPhone listing with a $9.99 case price).
+
+def test_below_floor_smartphone_price_is_invalid():
+    r = make_result(title="Apple iPhone 16 Pro Max 256GB", price=9.99)
+    assert is_valid_result(r, "iPhone 16 Pro Max") is False
+
+
+def test_at_floor_smartphone_price_is_valid():
+    r = make_result(title="Apple iPhone 16 Pro Max 256GB", price=250.00)
+    assert is_valid_result(r, "iPhone 16 Pro Max") is True
+
+
+def test_below_floor_headphones_price_is_invalid():
+    r = make_result(title="Sony WH-1000XM5 Wireless Headphones", price=4.99)
+    assert is_valid_result(r, "Sony WH-1000XM5") is False

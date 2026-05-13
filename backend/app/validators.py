@@ -2,6 +2,7 @@ import re
 
 from app.matching import DEFAULT_THRESHOLD, score
 from app.models import ScrapeResult, ScrapeStatus
+from app.price_floor import floor_for
 
 # Phrases that indicate a bot-block / captcha / wrong page rather than a real listing.
 BOT_CHECK_PHRASES = (
@@ -82,6 +83,12 @@ def is_valid_result(
     if result.price is not None and result.price <= 0:
         return False
     if result.price is None and not result.product_url:
+        return False
+
+    # Plausible-price floor per category — kills accessory/installment leaks
+    # that slipped past parse_price (e.g. a $9.99 phone case surfacing as the
+    # main price on Amazon's multi-offer pages).
+    if result.price is not None and result.price < floor_for(query):
         return False
 
     title_lower = result.title.lower()

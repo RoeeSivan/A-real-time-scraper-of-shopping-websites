@@ -5,16 +5,26 @@ from bs4 import BeautifulSoup
 from app.models import Candidate
 from app.sites.base import ProductFields, SiteConfig, parse_int, parse_price, parse_rating
 
+# Ordered list of selectors targeting the main "buy box" price on a product
+# page. We try them in order and stop at the first that yields a positive
+# number. The bare `span.a-offscreen` fallback is intentionally last — it
+# also matches accessory/refurb prices on multi-offer pages, so it should
+# only fire when the focused selectors miss.
+_PRICE_SELECTORS: tuple[str, ...] = (
+    "#corePriceDisplay_desktop_feature_div span.a-price > span.a-offscreen",
+    "#corePrice_feature_div span.a-price > span.a-offscreen",
+    "#apex_desktop span.a-price > span.a-offscreen",
+    "#priceblock_ourprice",
+    "#priceblock_dealprice",
+    "#priceblock_saleprice",
+    "span.a-offscreen",
+)
+
 
 class AmazonSite(SiteConfig):
     name = "Amazon.com"
     base_url = "https://www.amazon.com"
-    # Selectors are written but the price extraction is currently unreliable
-    # on multi-offer pages (returns accessory/refurbished prices). Until
-    # that's fixed, route Amazon through tier 4 (Firecrawl) only — which
-    # returns sensible prices. See CLAUDE.md "Amazon price extraction"
-    # follow-up. Tests still cover the selector code paths.
-    has_selectors = False
+    has_selectors = True
 
     def build_search_url(self, query: str) -> str:
         return f"{self.base_url}/s?k={quote_plus(query)}"
@@ -63,9 +73,11 @@ class AmazonSite(SiteConfig):
         return candidates
 
     def parse_product(self, html: str) -> ProductFields:
-        """Selectors from the oxylabs Amazon scraping guide:
+        """Selectors from the oxylabs Amazon scraping guide, hardened against
+        multi-offer pages:
           - title: `#productTitle`
-          - price: `span.a-offscreen` (first price on the page)
+          - price: focused buy-box selectors (`_PRICE_SELECTORS`), with the
+            generic `span.a-offscreen` as a last-resort fallback
           - rating: `#acrPopover[title]` → "4.7 out of 5 stars"
         Plus a `#acrCustomerReviewText` extension for review count.
         """
@@ -74,14 +86,18 @@ class AmazonSite(SiteConfig):
         title_el = soup.select_one("#productTitle")
         title = title_el.get_text(strip=True) if title_el else None
 
-        # Walk every `span.a-offscreen` and take the first one that parses as
-        # a number. `.a-offscreen` is also used for some non-price text
-        # (truncated titles), so we can't blindly take element [0].
+        # Walk focused selectors first (buy-box / core price containers),
+        # then fall back to the generic `span.a-offscreen`. This keeps us
+        # from picking up accessory or "frequently bought together" prices
+        # that share the offscreen class on multi-offer pages.
         price = None
-        for off in soup.select("span.a-offscreen"):
-            candidate_price = parse_price(off.get_text(strip=True))
-            if candidate_price and candidate_price > 0:
-                price = candidate_price
+        for selector in _PRICE_SELECTORS:
+            for el in soup.select(selector):
+                candidate_price = parse_price(el.get_text(strip=True))
+                if candidate_price and candidate_price > 0:
+                    price = candidate_price
+                    break
+            if price is not None:
                 break
 
         rating = None
