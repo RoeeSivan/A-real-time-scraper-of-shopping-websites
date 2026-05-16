@@ -6,18 +6,25 @@ import { Currency } from "@/lib/currency";
 const OPTIONS: { value: Currency; label: string }[] = [
   { value: "USD", label: "USD $" },
   { value: "ILS", label: "ILS ₪" },
+  { value: "EUR", label: "EUR €" },
 ];
 
 export function CurrencyToggle() {
-  const { currency, setCurrency, rate } = useCurrency();
-  const ilsDisabled = rate === null;
+  const { currency, setCurrency, rates } = useCurrency();
+
+  const activeRate =
+    currency === "USD" ? null : (rates[currency] ?? null);
+  const activeSymbol =
+    currency === "ILS" ? "₪" : currency === "EUR" ? "€" : "";
 
   return (
     <div className="inline-flex items-center gap-3">
       <div className="inline-flex rounded-full border hairline bg-paper p-0.5 text-xs font-medium">
         {OPTIONS.map((opt) => {
           const active = currency === opt.value;
-          const disabled = opt.value === "ILS" && ilsDisabled;
+          const disabled =
+            opt.value !== "USD" && rates[opt.value] == null;
+          const tooltipRate = opt.value !== "USD" ? rates[opt.value] : null;
           return (
             <button
               key={opt.value}
@@ -33,8 +40,8 @@ export function CurrencyToggle() {
               title={
                 disabled
                   ? "Exchange rate unavailable"
-                  : opt.value === "ILS" && rate !== null
-                    ? `1 USD = ${rate.toFixed(2)} ILS`
+                  : tooltipRate != null
+                    ? `1 USD = ${tooltipRate.toFixed(2)} ${opt.value}`
                     : undefined
               }
             >
@@ -43,9 +50,9 @@ export function CurrencyToggle() {
           );
         })}
       </div>
-      {currency === "ILS" && rate !== null && (
+      {activeRate !== null && (
         <span className="text-[11px] text-muted font-numeric">
-          1 USD = {rate.toFixed(2)} ₪
+          1 USD = {activeRate.toFixed(2)} {activeSymbol}
         </span>
       )}
     </div>

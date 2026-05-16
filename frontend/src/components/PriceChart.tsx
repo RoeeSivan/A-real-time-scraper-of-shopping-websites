@@ -13,6 +13,7 @@ import {
 
 import { ScrapeResult } from "@/lib/types";
 import { useCurrency } from "@/hooks/useCurrency";
+import { SYMBOL } from "@/lib/currency";
 
 interface PriceChartProps {
   results: ScrapeResult[];
@@ -32,9 +33,10 @@ const COLOR_CORAL_SOFT = "#e8a896";
 const COLOR_CORAL = "#c75d3f";
 
 export function PriceChart({ results }: PriceChartProps) {
-  const { format, currency, rate } = useCurrency();
-  const symbol = currency === "ILS" && rate !== null ? "₪" : "$";
-  const multiplier = currency === "ILS" && rate !== null ? rate : 1;
+  const { format, currency, rates } = useCurrency();
+  const activeRate = currency === "USD" ? 1 : (rates[currency] ?? null);
+  const symbol = activeRate !== null ? SYMBOL[currency] : SYMBOL.USD;
+  const multiplier = activeRate ?? 1;
 
   const priced = results
     .filter(

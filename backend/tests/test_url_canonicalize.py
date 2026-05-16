@@ -43,10 +43,29 @@ def test_amazon_lowercase_asin_is_uppercased():
 def test_non_amazon_urls_are_passed_through_unchanged():
     walmart = "https://www.walmart.com/ip/Sony-WH-1000XM5/123456"
     newegg = "https://www.newegg.com/p/0TH-01UG-00075"
-    bestbuy = "https://www.bestbuy.com/site/sony.../skuId=6505727"
+    bestbuy_query = "https://www.bestbuy.com/site/sony-headphones?skuId=6505727"
+    bestbuy_path = "https://www.bestbuy.com/site/sony-headphones/6505727.p?skuId=6505727"
     assert canonicalize_product_url("Walmart.com", walmart) == walmart
     assert canonicalize_product_url("Newegg.com", newegg) == newegg
-    assert canonicalize_product_url("BestBuy.com", bestbuy) == bestbuy
+    assert canonicalize_product_url("BestBuy.com", bestbuy_query) == bestbuy_query
+    assert canonicalize_product_url("BestBuy.com", bestbuy_path) == bestbuy_path
+
+
+def test_bestbuy_hallucinated_product_path_is_rejected():
+    # LLM/Firecrawl sometimes invent `/product/<slug>/<alphanumeric>` URLs.
+    # BestBuy 404s those with ERR_HTTP2_PROTOCOL_ERROR — drop so the search-URL
+    # fallback fires instead.
+    bad = (
+        "https://www.bestbuy.com/product/sony-wh-1000xm5-wireless-noise-"
+        "cancelling-over-the-ear-headphones-black/J7XSRH5CXG"
+    )
+    assert canonicalize_product_url("BestBuy.com", bad) is None
+
+
+def test_bestbuy_search_url_without_sku_is_rejected():
+    assert canonicalize_product_url(
+        "BestBuy.com", "https://www.bestbuy.com/site/searchpage.jsp?st=sony"
+    ) is None
 
 
 def test_none_url_returns_none():

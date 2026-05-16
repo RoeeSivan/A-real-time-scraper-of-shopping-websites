@@ -9,12 +9,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Currency, formatPrice } from "@/lib/currency";
+import { Currency, Rates, formatPrice } from "@/lib/currency";
 
 interface CurrencyContextValue {
   currency: Currency;
   setCurrency: (c: Currency) => void;
-  rate: number | null;
+  rates: Rates;
   format: (usd: number) => string;
 }
 
@@ -22,35 +22,49 @@ const CurrencyContext = createContext<CurrencyContextValue | null>(null);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+const FETCH_TARGETS: Exclude<Currency, "USD">[] = ["ILS", "EUR"];
+
+async function fetchRate(target: string): Promise<[string, number] | null> {
+  try {
+    const resp = await fetch(`${API_BASE}/rate?target=${target}`);
+    if (!resp.ok) return null;
+    const payload = await resp.json();
+    if (typeof payload?.rate === "number") {
+      return [target, payload.rate];
+    }
+  } catch {
+    // Swallow — toggle for that currency stays disabled.
+  }
+  return null;
+}
+
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [currency, setCurrency] = useState<Currency>("USD");
-  const [rate, setRate] = useState<number | null>(null);
+  const [rates, setRates] = useState<Rates>({});
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/rate?target=ILS`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.statusText)))
-      .then((payload) => {
-        if (!cancelled && typeof payload?.rate === "number") {
-          setRate(payload.rate);
-        }
-      })
-      .catch(() => {
-        // Quietly fall back to USD-only — toggle stays disabled.
-      });
+    Promise.all(FETCH_TARGETS.map(fetchRate)).then((pairs) => {
+      if (cancelled) return;
+      const next: Rates = {};
+      for (const pair of pairs) {
+        if (pair) next[pair[0] as Currency] = pair[1];
+      }
+      setRates(next);
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
   const format = useCallback(
-    (usd: number) => formatPrice(usd, currency, rate),
-    [currency, rate],
+    (usd: number) => formatPrice(usd, currency, rates),
+    [currency, rates],
   );
 
   const value = useMemo(
-    () => ({ currency, setCurrency, rate, format }),
-    [currency, rate, format],
+    () => ({ currency, setCurrency, rates, format }),
+    [currency, rates, format],
   );
 
   return (

@@ -29,6 +29,13 @@ log = logging.getLogger(__name__)
 # an ASIN) routes to Amazon's "Sorry, we couldn't find that page" 404.
 _AMAZON_ASIN = re.compile(r"/(?:dp|gp/product)/([A-Z0-9]{10})", re.IGNORECASE)
 
+# BestBuy product URLs always carry a numeric skuId, either in the path
+# (`/site/<slug>/<sku>.p`) or as a query param (`?skuId=<sku>`). LLM/Firecrawl
+# extractors sometimes invent `/product/<slug>/<alphanumeric-id>` URLs that
+# BestBuy 404s with ERR_HTTP2_PROTOCOL_ERROR.
+_BESTBUY_PATH_SKU = re.compile(r"/(\d{5,8})\.p\b", re.IGNORECASE)
+_BESTBUY_QUERY_SKU = re.compile(r"[?&]skuId=(\d{5,8})", re.IGNORECASE)
+
 
 def canonicalize_product_url(site_name: str, url: str | None) -> str | None:
     """Normalise a product URL so the frontend's "View →" link doesn't 404.
@@ -37,12 +44,17 @@ def canonicalize_product_url(site_name: str, url: str | None) -> str | None:
     — strips slug, tracking params, and the rare image-CDN URL the LLM/Firecrawl
     extractor sometimes produces. Returns `None` when no ASIN can be found.
 
+    For BestBuy, accept only URLs that carry a numeric skuId in the expected
+    `/site/.../<sku>.p` path or `?skuId=<sku>` query positions. Drop the
+    `/product/<slug>/<alphanumeric-id>` shape that the LLM tier occasionally
+    invents — those 404 on the live site.
+
     Note: this is a *syntactic* fix. The ASIN itself may still be hallucinated
     (LLM extractors confabulate plausible-looking 10-char IDs that don't
     exist). Use `verified_product_url` to additionally HTTP-check the URL.
 
-    For non-Amazon sites this is a no-op for now; their URL formats are simpler
-    and slug-based, and we haven't observed broken links from those tiers.
+    For Walmart and Newegg this is a no-op for now; their URL formats are
+    simpler and slug-based, and we haven't observed broken links from those tiers.
     """
     if not url:
         return None
@@ -51,6 +63,10 @@ def canonicalize_product_url(site_name: str, url: str | None) -> str | None:
         if m:
             asin = m.group(1).upper()
             return f"https://www.amazon.com/dp/{asin}"
+        return None
+    if "bestbuy." in site_name.lower() or "bestbuy." in url.lower():
+        if _BESTBUY_PATH_SKU.search(url) or _BESTBUY_QUERY_SKU.search(url):
+            return url
         return None
     return url
 
