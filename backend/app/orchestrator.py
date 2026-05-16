@@ -14,6 +14,7 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 
+from app.llm_verify import flag_price_outliers, rewrite_queries, verify_title
 from app.models import ScrapeResult, ScrapeStatus, TierAttempt
 from app.sites.amazon import amazon
 from app.sites.base import SiteConfig
@@ -80,12 +81,23 @@ def _tiers_for(site: SiteConfig) -> list[tuple[str, TierFn]]:
     return EXTERNAL_TIERS
 
 
-async def run_pipeline(site: SiteConfig, query: str) -> ScrapeResult:
+async def run_pipeline(
+    site: SiteConfig,
+    query: str,
+    *,
+    verify_query: str | None = None,
+) -> ScrapeResult:
     """Walk tiers for one site; return the first result that validates.
 
     Records every tier's outcome on the returned `ScrapeResult.tier_trace`
     so the frontend can show the actual cascade (`basic ✗ → llm ✓` etc.).
+
+    `query` is the string the tier functions actually search with (may be
+    LLM-rewritten). `verify_query`, if given, is the *original* user query
+    used for the LLM title-verify step — we judge alignment against what
+    the user typed, not against our internal rewrite.
     """
+    judge_query = verify_query or query
     last_failure: ScrapeResult | None = None
     trace: list[TierAttempt] = []
     for tier_name, tier_fn in _tiers_for(site):
@@ -102,25 +114,50 @@ async def run_pipeline(site: SiteConfig, query: str) -> ScrapeResult:
             )
             continue
 
-        if is_valid_result(result, query):
-            log.info("%s succeeded via tier=%s", site.name, tier_name)
-            trace.append(TierAttempt(tier=tier_name, outcome="succeeded"))
-            # Attach the trace so the row carries it through SSE.
-            result.tier_trace = trace
-            return result
-
-        log.info(
-            "%s/%s rejected by validator: status=%s title=%r price=%r",
-            site.name, tier_name, result.status, result.title, result.price,
-        )
-        trace.append(
-            TierAttempt(
-                tier=tier_name,
-                outcome="rejected",
-                error=result.error or _summarize_rejection(result),
+        if not is_valid_result(result, query):
+            log.info(
+                "%s/%s rejected by validator: status=%s title=%r price=%r",
+                site.name, tier_name, result.status, result.title, result.price,
             )
-        )
-        last_failure = result
+            trace.append(
+                TierAttempt(
+                    tier=tier_name,
+                    outcome="rejected",
+                    error=result.error or _summarize_rejection(result),
+                )
+            )
+            last_failure = result
+            continue
+
+        # Validator passed — ask the LLM whether the title actually matches
+        # what the user typed. A False reading triggers the next tier (same
+        # control flow as a validator rejection).
+        ok, reason = await verify_title(judge_query, result.title)
+        if not ok:
+            log.info(
+                "%s/%s rejected by llm-verify: %s (title=%r)",
+                site.name, tier_name, reason, result.title,
+            )
+            trace.append(
+                TierAttempt(
+                    tier=tier_name,
+                    outcome="rejected",
+                    error=f"llm-verify: {reason}",
+                )
+            )
+            last_failure = ScrapeResult(
+                site=site.name,
+                status=ScrapeStatus.FAILED,
+                error=f"llm-verify: {reason}",
+                title=result.title,
+                price=result.price,
+            )
+            continue
+
+        log.info("%s succeeded via tier=%s", site.name, tier_name)
+        trace.append(TierAttempt(tier=tier_name, outcome="succeeded"))
+        result.tier_trace = trace
+        return result
 
     if last_failure is not None:
         # Promote the last attempt's error message so the user sees *why* it failed.
@@ -158,26 +195,76 @@ async def run_all_sites(
 
     Order is determined by completion time, not by the `sites` argument —
     that's the whole point of streaming.
+
+    Two LLM-verification steps wrap the per-site pipelines:
+      * **Pre-gather**: one structured-output call rewrites the user query
+        per site (e.g. "bose qc ultra" → "Bose QuietComfort Ultra
+        Headphones" for Amazon). Cache hits skip the rewrite entirely.
+      * **Post-gather**: once every site finishes, prices are compared
+        against the cross-site median. Outliers (>30% deviation) get
+        flipped to FAILED and re-emitted on the same SSE channel —
+        `useSearch` merges by site name, so the row updates in place.
     """
     targets = sites or ALL_SITES
 
+    # 1. Identify which sites still need a fresh scrape vs. which can be
+    #    served from cache. Only cache-miss sites are sent to the rewriter
+    #    so we don't burn an LLM call for replays.
+    cache_lookup: dict[str, ScrapeResult | None] = {
+        site.name: _cache_get(site.name, query) for site in targets
+    }
+    miss_sites = [s for s in targets if cache_lookup[s.name] is None]
+    rewrites = await rewrite_queries(query, [s.name for s in miss_sites])
+
     async def _safe(site: SiteConfig) -> ScrapeResult:
-        cached = _cache_get(site.name, query)
+        cached = cache_lookup[site.name]
         if cached is not None:
             log.info("%s served from cache", site.name)
             return cached
+        rewritten = rewrites.get(site.name, query)
         try:
-            result = await run_pipeline(site, query)
+            result = await run_pipeline(site, rewritten, verify_query=query)
         except Exception as exc:  # final guard — one site never breaks the run
             return ScrapeResult(
                 site=site.name,
                 status=ScrapeStatus.FAILED,
                 error=f"orchestrator: {type(exc).__name__}: {exc}",
+                query_used=rewritten if rewritten != query else None,
             )
+        if rewritten != query:
+            result.query_used = rewritten
         if result.status is ScrapeStatus.SUCCESS:
             _cache_put(site.name, query, result)
         return result
 
     tasks = [asyncio.create_task(_safe(site)) for site in targets]
+    collected: list[ScrapeResult] = []
     for completed in asyncio.as_completed(tasks):
-        yield await completed
+        result = await completed
+        collected.append(result)
+        yield result
+
+    # 2. Cross-site price sanity — runs after every per-site cascade is
+    #    exhausted, so it can't trigger tier fallback. Flips outlier rows
+    #    to FAILED, re-emits them, and updates the cache so a repeat
+    #    search stays consistent. Median requires ≥3 priced samples.
+    outliers, median = flag_price_outliers(collected)
+    if not outliers:
+        return
+    for result in collected:
+        if result.site not in outliers:
+            continue
+        bad_price = result.price
+        reason = f"price-outlier: ${bad_price:.2f} vs cross-site median ${median:.2f}"
+        result.tier_trace = list(result.tier_trace) + [
+            TierAttempt(
+                tier=(result.method.value if result.method else "n/a"),
+                outcome="rejected",
+                error=reason,
+            )
+        ]
+        result.status = ScrapeStatus.FAILED
+        result.error = reason
+        # Bust the cached SUCCESS so the next replay re-runs the cascade.
+        _pipeline_cache.pop((result.site, query.strip().lower()), None)
+        yield result

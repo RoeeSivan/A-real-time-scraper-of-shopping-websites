@@ -57,3 +57,7 @@ class ScrapeResult(BaseModel):
     similarity: float | None = None
     error: str | None = None
     tier_trace: list[TierAttempt] = []
+    # Canonical query the scraper actually searched with after the LLM
+    # rewrite step. `None` means the original query was used as-is (rewrite
+    # disabled, skipped, cached, or it returned identity).
+    query_used: str | None = None

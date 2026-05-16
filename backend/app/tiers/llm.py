@@ -23,9 +23,9 @@ from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
-from openai import AsyncOpenAI
 
 from app.config import settings
+from app.llm_verify import get_openai_client
 from app.matching import score
 from app.models import Method, ScrapeResult, ScrapeStatus
 from app.sites.base import SiteConfig
@@ -134,7 +134,13 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
         )
 
     # 2. Hand to gpt-4o-mini with the structured-output schema.
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = get_openai_client()
+    if client is None:
+        return ScrapeResult(
+            site=site.name,
+            status=ScrapeStatus.FAILED,
+            error="llm: OPENAI_API_KEY not configured",
+        )
     user_prompt = (
         f"Query: {query!r}\n\n"
         f"Site: {site.name}\n\n"

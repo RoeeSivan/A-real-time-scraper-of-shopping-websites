@@ -20,5 +20,10 @@ class Settings(BaseSettings):
     # CORS — frontend runs on Next.js default port.
     frontend_origin: str = "http://localhost:3000"
 
+    # LLM verification layer (query rewrite + title verify + cross-site price
+    # sanity). Disable in tests or when running fully offline. Auto-disabled
+    # whenever `openai_api_key` is missing regardless of this flag.
+    enable_llm_verification: bool = True
+
 
 settings = Settings()

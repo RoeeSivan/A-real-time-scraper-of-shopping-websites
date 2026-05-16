@@ -51,7 +51,7 @@ work without them; tier 3 needs `OPENAI_API_KEY`; tier 4 needs
 From the repo root:
 
 ```bash
-./dev.sh
+—
 ```
 
 Starts backend (uvicorn :8000) and frontend (next dev :3000) in one

@@ -160,7 +160,7 @@ async def test_run_all_sites_yields_results_in_completion_order():
         await asyncio.sleep(0.1)
         return _result(Method.FIRECRAWL, site=site.name, title=GOOD_TITLE)
 
-    async def per_site(site, query):
+    async def per_site(site, query, **_):
         return await (fast_tier(site, query) if site.name == "FastSite" else slow_tier(site, query))
 
     with patch.object(orchestrator, "run_pipeline", per_site):
@@ -180,7 +180,7 @@ async def test_run_all_sites_caches_successful_results():
     site.name = "CachedSite"
     call_count = 0
 
-    async def per_site(site, query):  # noqa: ARG001
+    async def per_site(site, query, **_):  # noqa: ARG001
         nonlocal call_count
         call_count += 1
         return _result(Method.FIRECRAWL, site=site.name)
@@ -201,7 +201,7 @@ async def test_run_all_sites_does_not_cache_failures():
     site.name = "FlakySite"
     call_count = 0
 
-    async def per_site(site, query):  # noqa: ARG001
+    async def per_site(site, query, **_):  # noqa: ARG001
         nonlocal call_count
         call_count += 1
         return _failed_result("transient")
@@ -221,7 +221,7 @@ async def test_run_all_sites_isolates_per_site_failures():
     site_b = _ExternalOnlySite()
     site_b.name = "BrokenSite"
 
-    async def per_site(site, query):  # noqa: ARG001
+    async def per_site(site, query, **_):  # noqa: ARG001
         if site.name == "BrokenSite":
             raise RuntimeError("kaboom")
         return _result(Method.FIRECRAWL, site=site.name, title=GOOD_TITLE)
@@ -233,3 +233,87 @@ async def test_run_all_sites_isolates_per_site_failures():
     assert by_site["GoodSite"].status is ScrapeStatus.SUCCESS
     assert by_site["BrokenSite"].status is ScrapeStatus.FAILED
     assert "kaboom" in (by_site["BrokenSite"].error or "")
+
+
+# --- LLM verification wiring -------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_run_pipeline_falls_through_when_llm_verify_rejects():
+    """A title rejected by the LLM judge must trigger the next tier, same as a
+    validator failure."""
+    site = _SelectorSite()
+    # Both tiers return validator-passing results; LLM rejects only the first.
+    first = _result(Method.BASIC)
+    second = _result(Method.BROWSER)
+    calls = 0
+
+    async def fake_verify(query, title):  # noqa: ARG001
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return False, "different product line"
+        return True, "ok"
+
+    with patch.object(orchestrator, "SELECTOR_TIERS", [
+        ("basic", _mock_tier(first)),
+        ("browser", _mock_tier(second)),
+    ]), patch.object(orchestrator, "EXTERNAL_TIERS", []), \
+         patch.object(orchestrator, "verify_title", fake_verify):
+        result = await orchestrator.run_pipeline(site, QUERY)
+
+    assert result.method is Method.BROWSER
+    assert any(
+        a.outcome == "rejected" and a.error and "llm-verify" in a.error
+        for a in result.tier_trace
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_all_sites_applies_query_rewrite():
+    """Per-site rewrites must reach the tier as the effective search string and
+    propagate to ScrapeResult.query_used."""
+    site = _ExternalOnlySite()
+    site.name = "ReroutedSite"
+    seen_queries: list[str] = []
+
+    async def per_site(site, query, **_):
+        seen_queries.append(query)
+        return _result(Method.FIRECRAWL, site=site.name)
+
+    async def fake_rewrite(q, sites):
+        return {s: f"canonical {q}" for s in sites}
+
+    with patch.object(orchestrator, "run_pipeline", per_site), \
+         patch.object(orchestrator, "rewrite_queries", fake_rewrite):
+        results = [r async for r in orchestrator.run_all_sites(QUERY, sites=[site])]
+
+    assert seen_queries == [f"canonical {QUERY}"]
+    assert results[0].query_used == f"canonical {QUERY}"
+
+
+@pytest.mark.asyncio
+async def test_run_all_sites_flips_price_outlier():
+    """A site whose price is far from the cross-site median must be re-emitted
+    as FAILED after the initial gather completes."""
+    sites = []
+    for name in ("S1", "S2", "S3", "S4"):
+        s = _ExternalOnlySite()
+        s.name = name
+        sites.append(s)
+    prices = {"S1": 400.0, "S2": 380.0, "S3": 390.0, "S4": 9999.0}
+
+    async def per_site(site, query, **_):
+        return _result(Method.FIRECRAWL, site=site.name, price=prices[site.name])
+
+    with patch.object(orchestrator, "run_pipeline", per_site):
+        emitted = [r async for r in orchestrator.run_all_sites(QUERY, sites=sites)]
+
+    final_by_site: dict[str, ScrapeResult] = {}
+    for r in emitted:
+        final_by_site[r.site] = r  # later emission overwrites — outlier flip lands last
+
+    assert final_by_site["S4"].status is ScrapeStatus.FAILED
+    assert "price-outlier" in (final_by_site["S4"].error or "")
+    assert final_by_site["S1"].status is ScrapeStatus.SUCCESS
+    assert final_by_site["S2"].status is ScrapeStatus.SUCCESS
+    assert final_by_site["S3"].status is ScrapeStatus.SUCCESS
