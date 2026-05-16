@@ -63,6 +63,47 @@ def test_variant_filter_still_rejects_galaxy_ultra():
     assert score("Samsung Galaxy S24", "Samsung Galaxy S24 Ultra 256GB") == 0.0
 
 
+def test_model_anchor_rejects_xm4_when_query_is_xm5():
+    """The headline pre-existing bug: 'Sony WH-1000XM5' vs 'WH-1000XM4' scored
+    96 on `partial_ratio` because everything except one digit overlaps. Model
+    anchor must zero this out."""
+    assert score("Sony WH-1000XM5", "Sony WH-1000XM4 Wireless Bluetooth Headphones") == 0.0
+
+
+def test_model_anchor_accepts_same_model_with_extra_text():
+    """The anchor must not over-reject: the same model with marketing copy
+    after it should still score high."""
+    s = score(
+        "Sony WH-1000XM5",
+        "Sony WH-1000XM5 Wireless Industry Leading Noise Cancelling Headphones",
+    )
+    assert s >= DEFAULT_THRESHOLD
+
+
+def test_model_anchor_iphone_version_mismatch():
+    """iPhone 16 must not match iPhone 15 (already rejected by partial_ratio
+    too, but the anchor makes it deterministic)."""
+    assert score("iPhone 16", "Apple iPhone 15 128GB Black") == 0.0
+
+
+def test_model_anchor_ignores_year_only_tokens():
+    """A bare year like '2024' should NOT count as a model identifier — most
+    retailer titles drop the year, and forcing it would zero everything."""
+    s = score(
+        "Lenovo Tab P12-2024",
+        "Lenovo Tab P12 Touchscreen Tablet, 12.7 Inch",
+    )
+    # P12 is the model anchor (matches), 2024 is treated as a year (ignored).
+    assert s >= DEFAULT_THRESHOLD
+
+
+def test_model_anchor_no_op_when_query_has_no_model():
+    """Brand-only queries ('sony headphones') have no model token, so the
+    anchor should be a no-op and let `partial_ratio` decide."""
+    s = score("sony headphones", "Sony Premium Wireless Headphones")
+    assert s >= DEFAULT_THRESHOLD
+
+
 def test_pick_best_returns_highest_scorer_above_threshold():
     candidates = [
         Candidate(title="Apple iPad Pro", url="https://example.com/a"),

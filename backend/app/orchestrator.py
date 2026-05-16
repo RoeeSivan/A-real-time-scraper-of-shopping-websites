@@ -233,8 +233,10 @@ async def run_all_sites(
             )
         if rewritten != query:
             result.query_used = rewritten
-        if result.status is ScrapeStatus.SUCCESS:
-            _cache_put(site.name, query, result)
+        # NOTE: deliberately not cached here — see post-gather block below.
+        # A concurrent SSE request reading from cache could observe a result
+        # that the outlier-flip step is about to mutate; deferring the cache
+        # write until after the flip keeps the cache invariant clean.
         return result
 
     tasks = [asyncio.create_task(_safe(site)) for site in targets]
@@ -246,25 +248,35 @@ async def run_all_sites(
 
     # 2. Cross-site price sanity — runs after every per-site cascade is
     #    exhausted, so it can't trigger tier fallback. Flips outlier rows
-    #    to FAILED, re-emits them, and updates the cache so a repeat
-    #    search stays consistent. Median requires ≥3 priced samples.
+    #    to FAILED, re-emits them, and only THEN seeds the cache so a
+    #    concurrent reader never sees a result mid-mutation.
     outliers, median = flag_price_outliers(collected)
-    if not outliers:
-        return
+    outlier_results: list[ScrapeResult] = []
     for result in collected:
-        if result.site not in outliers:
-            continue
-        bad_price = result.price
-        reason = f"price-outlier: ${bad_price:.2f} vs cross-site median ${median:.2f}"
-        result.tier_trace = list(result.tier_trace) + [
-            TierAttempt(
-                tier=(result.method.value if result.method else "n/a"),
-                outcome="rejected",
-                error=reason,
+        is_outlier = result.site in outliers
+        # `.get()` tolerates a tier returning a ScrapeResult whose `site`
+        # field doesn't match the SiteConfig.name we dispatched (test fixtures
+        # do this; real tiers shouldn't, but defending costs nothing). Missing
+        # entry → treat as "never cached, safe to seed".
+        is_fresh = cache_lookup.get(result.site) is None
+        if is_outlier:
+            bad_price = result.price
+            reason = (
+                f"price-outlier: ${bad_price:.2f} vs cross-site median "
+                f"${median:.2f}" if median is not None else "price-outlier"
             )
-        ]
-        result.status = ScrapeStatus.FAILED
-        result.error = reason
-        # Bust the cached SUCCESS so the next replay re-runs the cascade.
-        _pipeline_cache.pop((result.site, query.strip().lower()), None)
+            result.tier_trace = list(result.tier_trace) + [
+                TierAttempt(
+                    tier=(result.method.value if result.method else "n/a"),
+                    outcome="rejected",
+                    error=reason,
+                )
+            ]
+            result.status = ScrapeStatus.FAILED
+            result.error = reason
+            outlier_results.append(result)
+        elif is_fresh and result.status is ScrapeStatus.SUCCESS:
+            _cache_put(result.site, query, result)
+
+    for result in outlier_results:
         yield result

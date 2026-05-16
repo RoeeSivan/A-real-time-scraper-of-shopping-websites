@@ -24,7 +24,6 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
-from app.config import settings
 from app.llm_verify import get_openai_client
 from app.matching import score
 from app.models import Method, ScrapeResult, ScrapeStatus
@@ -97,7 +96,11 @@ def _coerce_int(value: Any) -> int | None:
 
 
 async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
-    if not settings.openai_api_key:
+    # Single API-key gate up front — short-circuits before the HTTP fetch
+    # whenever the key isn't configured. The shared client is then reused
+    # across calls (no per-call construction tax).
+    openai_client = get_openai_client()
+    if openai_client is None:
         return ScrapeResult(
             site=site.name,
             status=ScrapeStatus.FAILED,
@@ -113,9 +116,9 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
         cookies=LOCALE_COOKIES,
         timeout=REQUEST_TIMEOUT,
         follow_redirects=True,
-    ) as client:
+    ) as http_client:
         try:
-            resp = await client.get(search_url)
+            resp = await http_client.get(search_url)
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             return ScrapeResult(
@@ -134,13 +137,6 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
         )
 
     # 2. Hand to gpt-4o-mini with the structured-output schema.
-    client = get_openai_client()
-    if client is None:
-        return ScrapeResult(
-            site=site.name,
-            status=ScrapeStatus.FAILED,
-            error="llm: OPENAI_API_KEY not configured",
-        )
     user_prompt = (
         f"Query: {query!r}\n\n"
         f"Site: {site.name}\n\n"
@@ -151,7 +147,7 @@ async def llm_scrape(site: SiteConfig, query: str) -> ScrapeResult:
     )
 
     try:
-        completion = await client.beta.chat.completions.parse(
+        completion = await openai_client.beta.chat.completions.parse(
             model=MODEL,
             temperature=0,
             messages=[

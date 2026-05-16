@@ -47,6 +47,44 @@ def _title_has_extra_variant(query: str, title: str) -> bool:
             return True
     return False
 
+
+# Tokens containing at least one digit — these are model/version identifiers
+# (WH-1000XM5 → "1000xm5", iPhone 16 → "16", P12-2024 → "p12" + "2024", M3).
+# A query that names a specific model MUST match a title that names the same
+# model; otherwise `partial_ratio` will happily give 96 to "WH-1000XM4" vs
+# "WH-1000XM5" because the surrounding text overlaps.
+# Hyphens are NOT included in the character class so compound identifiers like
+# "P12-2024" split into ["P12", "2024"]; "2024" then gets filtered as a year.
+_MODEL_TOKEN = re.compile(r"[a-z0-9]*\d[a-z0-9]*", re.IGNORECASE)
+# Pure-year tokens (4 digits between 1990 and 2099) are too generic — most
+# titles drop the release year, and forcing it would zero every match. Filtered
+# out of the anchor set; `partial_ratio` still penalizes year mismatches.
+_YEAR_TOKEN = re.compile(r"^(19|20)\d{2}$")
+
+
+def _model_tokens(text: str) -> list[str]:
+    """Extract digit-bearing identifiers from `text`. Drops bare years
+    (1990–2099) because they're too generic to anchor on."""
+    out: list[str] = []
+    for m in _MODEL_TOKEN.finditer(text):
+        tok = m.group().lower()
+        if not tok or _YEAR_TOKEN.match(tok):
+            continue
+        out.append(tok)
+    return out
+
+
+def _query_model_mismatch(query: str, title: str) -> bool:
+    """True iff `query` names model identifiers that NONE of `title`'s
+    text contains. Substring containment (not equality) so "1000xm5" matches
+    a title that mentions "WH-1000XM5" anywhere. When the query has no model
+    identifier, returns False (no constraint applied)."""
+    qtokens = _model_tokens(query)
+    if not qtokens:
+        return False
+    title_lower = title.lower()
+    return not any(t in title_lower for t in qtokens)
+
 # `partial_ratio` (best-substring match) discriminates much better than
 # `token_set_ratio` on real product titles, which are typically short queries
 # vs verbose titles padded with specs/SKUs/colors. Live benchmark on the
@@ -66,6 +104,10 @@ def score(query: str, title: str) -> float:
     if not query or not title:
         return 0.0
     if _title_has_extra_variant(query, title):
+        return 0.0
+    if _query_model_mismatch(query, title):
+        # "Sony WH-1000XM5" must not match "WH-1000XM4" just because the
+        # surrounding tokens (Sony, headphones) overlap.
         return 0.0
     return float(fuzz.partial_ratio(query.lower(), title.lower()))
 
